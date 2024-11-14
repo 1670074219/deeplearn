@@ -1,50 +1,45 @@
-# 服务器配置
-servers:
-  server1:
-    host: "219.216.99.133"
-    port: 22
-    username: "root"
-    password: "siton-2009"
-  server2:
-    host: "219.216.99.4"
-    port: 22
-    username: "root"
-    password: "sitonholy@neu"
-    
-# 用户配置
-users:
-  admin:
-    username: "admin"
-    password: "admin_password"
-    role: "admin"
-  user1:
-    username: "user1"
-    password: "password1"
-    role: "user"
-
-# Docker仓库服务器配置
+docker_images:
+- description: PyTorch 开发环境
+  name: pytorch:latest
+  registry: 实验室仓库
+- description: TensorFlow 开发环境
+  name: tensorflow:latest
+  registry: 公共仓库
+docker_registries:
+- insecure: true
+  name: 实验室仓库
+  password: Sitonholy@2021
+  url: 219.216.101.242:8888
+  username: admin
+- name: 公共仓库
+  url: docker.io
 registry_server:
   host: "219.216.101.242"
   port: 22
   username: "root"
   password: "siton@2024"
   registry_port: 8888
-
-# Docker仓库配置
-docker_registries:
-  - name: "实验室仓库"
-    url: "219.216.101.242:8888"
-    username: "admin"
-    password: "Sitonholy@2021"
-    insecure: true
-  - name: "公共仓库"
-    url: "docker.io"
-
-# Docker镜像配置
-docker_images:
-  - name: "pytorch:latest"
-    description: "PyTorch 开发环境"
-    registry: "实验室仓库"
-  - name: "tensorflow:latest"
-    description: "TensorFlow 开发环境"
-    registry: "公共仓库"
+  nfs_path: "/nfs/data"
+  nfs_host: "219.216.101.242"
+servers:
+  server1:
+    host: 219.216.99.133
+    password: siton-2009
+    port: 22
+    username: root
+  server2:
+    host: 219.216.99.4
+    password: sitonholy@neu
+    port: 22
+    username: root
+users:
+  admin:
+    data_dir: ''
+    password: admin_password
+    role: admin
+    username: admin
+  user1:
+    data_dir: /nfs/data/user1
+    password: password1
+    role: user
+    username: user1

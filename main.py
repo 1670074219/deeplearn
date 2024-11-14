@@ -191,7 +191,7 @@ class LabServer:
             registry_ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             
             registry_server = self.config['registry_server']
-            print(f"正在连���到仓库服务器 {registry_server['host']}...")
+            print(f"正在连务器 {registry_server['host']}...")
             print(f"使用用户名: {registry_server['username']}")
             
             try:
@@ -251,6 +251,61 @@ class LabServer:
                 registry_ssh.close()
             except:
                 pass
+
+    def create_user_data_dir(self, ssh, username):
+        """在仓库服务器上创建用户的数据目录"""
+        try:
+            # 连接到仓库服务器
+            registry_ssh = paramiko.SSHClient()
+            registry_ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            
+            registry_server = self.config['registry_server']
+            registry_ssh.connect(
+                hostname=registry_server['host'],
+                port=registry_server['port'],
+                username=registry_server['username'],
+                password=registry_server['password']
+            )
+
+            # 创建用户目录
+            user_dir = f"{registry_server['nfs_path']}/{username}"
+            
+            # 先检查目录是否存在
+            check_cmd = f"[ -d {user_dir} ] && echo 'exists' || echo 'not exists'"
+            stdin, stdout, stderr = registry_ssh.exec_command(check_cmd)
+            if stdout.read().decode().strip() == 'exists':
+                print(f"用户目录已存在：{user_dir}")
+            else:
+                # 创建目录并设置权限
+                cmd = f"sudo mkdir -p {user_dir} && sudo chmod 777 {user_dir}"
+                print(f"正在创建用户数据目录：{user_dir}")
+                stdin, stdout, stderr = registry_ssh.exec_command(cmd)
+                error = stderr.read().decode()
+                
+                if error:
+                    print(f"创建用户数据目录失败：{error}")
+                    return None
+            
+            # 更新用户配置
+            self.config['users'][username]['data_dir'] = user_dir
+            self._save_config()
+            
+            print(f"用户数据目录创建/确认成功：{user_dir}")
+            return user_dir
+            
+        except Exception as e:
+            print(f"创建用户数据目录时出错：{str(e)}")
+            return None
+        finally:
+            try:
+                registry_ssh.close()
+            except:
+                pass
+
+    def _save_config(self):
+        """保存配置到文件"""
+        with open('config.yaml', 'w', encoding='utf-8') as f:
+            yaml.dump(self.config, f, allow_unicode=True)
 
     def create_dl_task(self):
         if not self.current_user:
@@ -401,10 +456,20 @@ class LabServer:
             if not container_port:
                 container_port = "8080"
 
-            # 构建Docker运行命令
+            # 检查用户是否已有数据目录，如果没有则创建
+            if not self.config['users'][self.current_user].get('data_dir'):
+                user_data_dir = self.create_user_data_dir(ssh, self.current_user)
+                if not user_data_dir:
+                    print("创建用户数据目录失败，操作终止")
+                    return
+            else:
+                user_data_dir = self.config['users'][self.current_user]['data_dir']
+
+            # 构建Docker运行命令，直接使用本地挂载点
             docker_cmd = (
                 f"docker run -d --gpus '\"device={','.join(str(i) for i in range(gpu_num))}\"' "
                 f"-v {work_dir}:/workspace "
+                f"-v {user_data_dir}:/data "  # 直接使用本地挂载点
                 f"-p {host_port}:{container_port} "
                 f"--name {container_name} "
                 f"{image_name} "
