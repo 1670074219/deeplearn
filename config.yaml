@@ -1,0 +1,25 @@
+# 服务器配置
+servers:
+  server1:
+    host: "219.216.99.133"
+    port: 22
+    username: "root"
+    password: "siton-2009"
+    
+# 用户配置1
+users:
+  admin:
+    username: "admin"
+    password: "admin_password"
+    role: "admin"
+  user1:
+    username: "user1"
+    password: "password1"
+    role: "user"
+
+# Docker镜像配置
+docker_images:
+  - name: "pytorch:latest"
+    description: "PyTorch 开发环境"
+  - name: "tensorflow:latest"
+    description: "TensorFlow 开发环境" 
