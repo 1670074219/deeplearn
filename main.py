@@ -14,15 +14,29 @@ class LabServer:
             return yaml.safe_load(f)
 
     def login(self):
-        username = input("请输入用户名: ")
-        password = getpass.getpass("请输入密码: ")
-        
-        if self.user_manager.verify_user(username, password):
-            self.current_user = username
-            print(f"欢迎, {username}!")
-            return True
-        print("用户名或密码错误")
-        return False
+        try:
+            username = input("请输入用户名: ")
+            password = getpass.getpass("请输入密码: ")
+            
+            # 检查用户是否存在
+            if username not in self.config['users']:
+                print(f"错误：用户 {username} 不存在")
+                return False
+            
+            # 检查密码是否正确
+            user_info = self.config['users'][username]
+            if user_info['password'] == password:
+                self.current_user = username
+                print(f"欢迎, {username}!")
+                print(f"用户角色: {user_info['role']}")
+                return True
+            else:
+                print("错误：密码不正确")
+                return False
+            
+        except Exception as e:
+            print(f"登录过程中出错：{str(e)}")
+            return False
 
     def check_gpu_status(self, server_name):
         if server_name not in self.config['servers']:
@@ -86,8 +100,71 @@ class LabServer:
                         })
             return images
         except Exception as e:
-            print(f"获取Docker镜像列表时出错：{str(e)}")
+            print(f"取Docker镜像列表出错：{str(e)}")
             return []
+
+    def pull_docker_image(self, ssh, image_name, registry_info):
+        """从指定仓库拉取Docker镜像"""
+        try:
+            full_image_name = f"{registry_info['url']}/{image_name}"
+            print(f"正在从 {registry_info['name']} 拉取镜像 {image_name}...")
+            
+            # 如果仓库需要认证
+            if 'username' in registry_info and 'password' in registry_info:
+                # 在远程服务器上执行登录，使用echo和管道来避免密码在命令行中显示
+                login_cmd = (
+                    f"echo {registry_info['password']} | "
+                    f"docker login {registry_info['url']} "
+                    f"--username {registry_info['username']} "
+                    f"--password-stdin"
+                )
+                    
+                print(f"正在远程服务器上登录Docker仓库 {registry_info['url']}...")
+                
+                stdin, stdout, stderr = ssh.exec_command(login_cmd)
+                login_output = stdout.read().decode()
+                login_error = stderr.read().decode()
+                
+                if "Login Succeeded" in login_output or "Login Succeeded" in login_error:
+                    print("Docker仓库登录成功！")
+                else:
+                    print(f"登录Docker仓库失败：{login_error}")
+                    return False
+
+            # 在远程服务器上拉取镜像
+            print(f"开始在远程服务器上拉取镜像：{full_image_name}")
+            pull_cmd = f"docker pull {full_image_name}"
+                
+            stdin, stdout, stderr = ssh.exec_command(pull_cmd)
+            
+            # 实时显示拉取进度
+            while True:
+                line = stdout.readline()
+                if not line:
+                    break
+                print(line.strip())
+            
+            error = stderr.read().decode()
+            if error:
+                if "Error" in error:
+                    print(f"拉取镜像失败：{error}")
+                    return False
+                else:
+                    print(f"警告：{error}")
+            
+            # 在远程服务器上验证镜像是否成功拉取
+            verify_cmd = f"docker images {full_image_name} --format '{{{{.Repository}}}}:{{{{.Tag}}}}'"
+            stdin, stdout, stderr = ssh.exec_command(verify_cmd)
+            if stdout.read().decode().strip():
+                print("镜像拉取成功！")
+                return True
+            else:
+                print("镜像拉取失败：无法在远程服务器上找到拉取的镜像")
+                return False
+            
+        except Exception as e:
+            print(f"拉取镜像时出错：{str(e)}")
+            return False
 
     def create_dl_task(self):
         if not self.current_user:
@@ -126,22 +203,36 @@ class LabServer:
             )
 
             print("\n获取服务器上的Docker镜像列表...")
-            available_images = self.get_server_docker_images(ssh)
+            local_images = self.get_server_docker_images(ssh)
+            available_images = self.config['docker_images']
             
-            if not available_images:
-                print("错误：未找到可用的Docker镜像")
-                return
-
             print("\n可用的Docker镜像：")
             for idx, image in enumerate(available_images, 1):
-                print(f"{idx}. {image['name']} (大小: {image['size']})")
+                status = "本地可用" if any(local_img['name'] == image['name'] for local_img in local_images) else "需要下载"
+                print(f"{idx}. {image['name']} ({image['description']}) [{status}]")
             
             while True:
                 try:
                     choice = input("\n请选择镜像编号: ")
                     idx = int(choice) - 1
                     if 0 <= idx < len(available_images):
-                        image_name = available_images[idx]['name']
+                        selected_image = available_images[idx]
+                        image_name = selected_image['name']
+                        
+                        # 检查镜像是否需要下载
+                        if not any(local_img['name'] == image_name for local_img in local_images):
+                            registry_name = selected_image['registry']
+                            registry_info = next((reg for reg in self.config['docker_registries'] 
+                                               if reg['name'] == registry_name), None)
+                            
+                            if not registry_info:
+                                print(f"错误：找不到镜像仓库 {registry_name}")
+                                return
+                            
+                            if not self.pull_docker_image(ssh, image_name, registry_info):
+                                print("拉取镜像失败，操作终止")
+                                return
+                        
                         break
                     else:
                         print("无效的选择，请重试")

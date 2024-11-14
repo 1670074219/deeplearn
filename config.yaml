@@ -5,8 +5,13 @@ servers:
     port: 22
     username: "root"
     password: "siton-2009"
+  server2:
+    host: "219.216.99.4"
+    port: 22
+    username: "root"
+    password: "sitonholy@neu"
     
-# 用户配置1
+# 用户配置
 users:
   admin:
     username: "admin"
@@ -17,9 +22,21 @@ users:
     password: "password1"
     role: "user"
 
+# Docker仓库配置
+docker_registries:
+  - name: "实验室仓库"
+    url: "219.216.101.242:8888"
+    username: "admin"
+    password: "Sitonholy@2021"
+    insecure: true
+  - name: "公共仓库"
+    url: "docker.io"
+
 # Docker镜像配置
 docker_images:
   - name: "pytorch:latest"
     description: "PyTorch 开发环境"
+    registry: "实验室仓库"
   - name: "tensorflow:latest"
-    description: "TensorFlow 开发环境" 
+    description: "TensorFlow 开发环境"
+    registry: "公共仓库"

@@ -6,9 +6,20 @@ class UserManager:
         self.config = config
 
     def verify_user(self, username, password):
-        users = self.config['users']
-        return (username in users and 
-                users[username]['password'] == password)
+        try:
+            users = self.config['users']
+            if username not in users:
+                print(f"错误：用户 {username} 不存在")
+                return False
+            
+            if users[username]['password'] == password:
+                return True
+            
+            print("错误：密码不正确")
+            return False
+        except Exception as e:
+            print(f"验证用户时出错：{str(e)}")
+            return False
 
     def is_admin(self, username):
         return (username in self.config['users'] and 
