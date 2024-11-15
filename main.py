@@ -8,6 +8,7 @@ class LabServer:
         self.config = self.load_config()
         self.user_manager = UserManager(self.config)
         self.current_user = None
+        self.cached_server_status = None
 
     def load_config(self):
         with open('config.yaml', 'r', encoding='utf-8') as f:
@@ -28,7 +29,7 @@ class LabServer:
                 # 尝试最多3次密码输入
                 for attempt in range(3):
                     password = getpass.getpass("请输入密码: ")
-                    if password == '0':  # 允许用户输入0返回用户名输入
+                    if password == '0':  # 允许用户输入0回用户名输入
                         break
                     
                     # 检查密码是否正确
@@ -55,6 +56,7 @@ class LabServer:
                 return False
 
     def check_gpu_status(self, server_name):
+        """获取服务器GPU状态"""
         if server_name not in self.config['servers']:
             print(f"错误：服务器 {server_name} 不存在")
             return None
@@ -73,8 +75,12 @@ class LabServer:
                 timeout=10
             )
             
-            # 获取GPU状态
-            stdin, stdout, stderr = ssh.exec_command('nvidia-smi --query-gpu=index,utilization.gpu --format=csv,noheader,nounits')
+            # 获取GPU详细信息
+            cmd = (
+                "nvidia-smi --query-gpu=index,gpu_name,memory.total,memory.used,memory.free,utilization.gpu "
+                "--format=csv,noheader,nounits"
+            )
+            stdin, stdout, stderr = ssh.exec_command(cmd)
             output = stdout.read().decode()
             error = stderr.read().decode()
             
@@ -82,12 +88,19 @@ class LabServer:
                 print(f"获取GPU状态时出错：{error}")
                 return None
             
-            gpu_status = []
+            gpu_info = []
             for line in output.strip().split('\n'):
-                index, utilization = line.split(',')
-                gpu_status.append((int(index), int(utilization)))
+                index, name, total_mem, used_mem, free_mem, util = line.split(', ')
+                gpu_info.append({
+                    'index': int(index),
+                    'name': name,
+                    'total_memory': float(total_mem),
+                    'used_memory': float(used_mem),
+                    'free_memory': float(free_mem),
+                    'utilization': float(util)
+                })
             
-            return gpu_status
+            return gpu_info
             
         except Exception as e:
             print(f"连接服务器失败：{str(e)}")
@@ -185,7 +198,7 @@ class LabServer:
                 else:
                     print(f"警告：{error}")
             
-            # 在远程服务���上验证镜像是否成功拉取
+            # 在远程服务器上验证镜像是否成功拉取
             verify_cmd = f"docker images {full_image_name} --format '{{{{.Repository}}}}:{{{{.Tag}}}}'"
             stdin, stdout, stderr = ssh.exec_command(verify_cmd)
             if stdout.read().decode().strip():
@@ -283,7 +296,7 @@ class LabServer:
                 password=registry_server['password']
             )
 
-            # 创建用户目录
+            # 建用户目录
             user_dir = f"{registry_server['nfs_path']}/{username}"
             
             # 先检查目录是否存在
@@ -319,37 +332,106 @@ class LabServer:
                 pass
 
     def _save_config(self):
-        """保存配置到文件"""
+        """保存置到文件"""
         with open('config.yaml', 'w', encoding='utf-8') as f:
             yaml.dump(self.config, f, allow_unicode=True)
+
+    def get_all_servers_status(self):
+        """获取所有服务器的状态信息"""
+        server_gpu_status = {}
+        valid_servers = []
+        
+        for idx, (server_name, server_info) in enumerate(self.config['servers'].items(), 1):
+            gpu_info = self.check_gpu_status(server_name)
+            if gpu_info is not None:
+                used_gpus = sum(1 for gpu in gpu_info if gpu['utilization'] > 0)
+                total_gpus = len(gpu_info)
+                gpu_model = gpu_info[0]['name'] if gpu_info else "未知"
+                avg_util = sum(gpu['utilization'] for gpu in gpu_info) / total_gpus
+                
+                server_gpu_status[str(idx)] = {
+                    'name': server_name,
+                    'host': server_info['host'],
+                    'gpu_info': gpu_info,
+                    'used_gpus': used_gpus,
+                    'total_gpus': total_gpus,
+                    'gpu_model': gpu_model,
+                    'avg_util': avg_util
+                }
+                valid_servers.append(server_name)
+        
+        return server_gpu_status
+
+    def display_server_status(self, server_status):
+        """显示服务器状态信息"""
+        print("\n{:<5} {:<10} {:<15} {:<30} {:<10} {:<15} {:<10}".format(
+            "序号", "服务器", "IP地址", "GPU型号", "GPU数量", "已用/总数", "使用率"
+        ))
+        print("-" * 95)
+        
+        for idx, info in server_status.items():
+            print("{:<5} {:<10} {:<15} {:<30} {:<10} {:<15} {:<10.1f}%".format(
+                idx,
+                info['name'],
+                info['host'],
+                info['gpu_model'],
+                info['total_gpus'],
+                f"{info['used_gpus']}/{info['total_gpus']}",
+                info['avg_util']
+            ))
 
     def create_dl_task(self):
         if not self.current_user:
             print("请先登录")
             return
 
-        while True:  # 外层���环，用于服务器选择
-            print("\n可用的服务器：")
-            server_gpu_status = {}
-            for server_name, server_info in self.config['servers'].items():
-                gpu_status = self.check_gpu_status(server_name)
-                if gpu_status is not None:
-                    used_gpus = sum(1 for _, utilization in gpu_status if utilization > 0)
-                    total_gpus = len(gpu_status)
-                    server_gpu_status[server_name] = (used_gpus, total_gpus)
-                    print(f"- {server_name} ({server_info['host']}): {used_gpus}/{total_gpus} GPUs in use")
-            print("\n输入0返回主菜单")
+        while True:  # 外层循环，用于服务器选择
+            if self.cached_server_status is None:
+                print("正在获取服务器信息...")
+                self.cached_server_status = self.get_all_servers_status()
             
-            server_name = input("请选择服务器: ").strip()
-            if server_name == '0':
+            print("\n可用的服务器：")
+            self.display_server_status(self.cached_server_status)
+            
+            print("\n选项：")
+            print("0. 返回主菜单")
+            print("r. 刷新服务器信息")
+            server_choice = input("请选择服务器序号: ").strip().lower()
+            
+            if server_choice == '0':
                 return
-            if server_name not in server_gpu_status:
-                print("错误：无效的服务器名称")
-                continue  # 继续外层循环，重新选择服务器
+            elif server_choice == 'r':
+                print("正在刷新服务器信息...")
+                self.cached_server_status = self.get_all_servers_status()
+                continue
+            
+            if server_choice not in self.cached_server_status:
+                print("错误：无效的服务器序号")
+                continue
 
-            used_gpus, total_gpus = server_gpu_status[server_name]
-            available_gpus = total_gpus - used_gpus
-            print(f"\n服务器 {server_name} 有 {available_gpus} 个未使用的GPU")
+            server_info = self.cached_server_status[server_choice]
+            server_name = server_info['name']
+            gpu_info = server_info['gpu_info']
+            
+            # 显示选中服务器的详细GPU信息
+            print(f"\n服务器 {server_name} 的GPU详细信息：")
+            print("\n{:<5} {:<30} {:<12} {:<12} {:<12} {:<10}".format(
+                "GPU", "型号", "总内存(MB)", "已用(MB)", "可用(MB)", "使用率(%)"
+            ))
+            print("-" * 85)
+            
+            for gpu in gpu_info:
+                print("{:<5} {:<30} {:<12.0f} {:<12.0f} {:<12.0f} {:<10.1f}".format(
+                    gpu['index'],
+                    gpu['name'],
+                    gpu['total_memory'],
+                    gpu['used_memory'],
+                    gpu['free_memory'],
+                    gpu['utilization']
+                ))
+
+            available_gpus = sum(1 for gpu in gpu_info if gpu['utilization'] < 5)
+            print(f"\n可用GPU数量: {available_gpus}")
 
             try:
                 server = self.config['servers'][server_name]
@@ -495,11 +577,10 @@ class LabServer:
                     safe_image_name = image_name.replace('/', '_').replace(':', '_')
                     container_name = f"{self.current_user}_{server_name}_{safe_image_name}"
 
-                    # 构建Docker运行命令
+                    # 构建Docker运行命令，移除工作目录挂载
                     docker_cmd = (
                         f"docker run -d --gpus '\"device={','.join(str(i) for i in range(gpu_num))}\"' "
-                        f"-v {work_dir}:/workspace "
-                        f"-v {user_data_dir}:/data "
+                        f"-v {user_data_dir}:/data "  # 只保留数据目录挂载
                         f"-p {host_port}:{container_port} "
                         f"--name {container_name} "
                         f"{image_name} "
