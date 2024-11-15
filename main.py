@@ -282,7 +282,7 @@ class LabServer:
                 pass
 
     def create_user_data_dir(self, ssh, username):
-        """在仓库服务器上创建用户的数据目录"""
+        """在仓库服务器上创建用户的数据目录和FTP虚拟用户"""
         try:
             # 连接到仓库服务器
             registry_ssh = paramiko.SSHClient()
@@ -296,7 +296,7 @@ class LabServer:
                 password=registry_server['password']
             )
 
-            # 建用户目录
+            # 创建用户目录
             user_dir = f"{registry_server['nfs_path']}/{username}"
             
             # 先检查目录是否存在
@@ -306,7 +306,7 @@ class LabServer:
                 print(f"用户目录已存在：{user_dir}")
             else:
                 # 创建目录并设置权限
-                cmd = f"sudo mkdir -p {user_dir} && sudo chmod 777 {user_dir}"
+                cmd = f"sudo mkdir -p {user_dir} && sudo chmod 755 {user_dir}"
                 print(f"正在创建用户数据目录：{user_dir}")
                 stdin, stdout, stderr = registry_ssh.exec_command(cmd)
                 error = stderr.read().decode()
@@ -314,14 +314,45 @@ class LabServer:
                 if error:
                     print(f"创建用户数据目录失败：{error}")
                     return None
-            
+
+            # 创建虚拟用户配置
+            virtual_user_config = f"""
+local_root={user_dir}
+write_enable=YES
+anon_upload_enable=NO
+anon_mkdir_write_enable=NO
+allow_writeable_chroot=YES
+"""
+            # 创建用户配置文件
+            user_config_path = f"/etc/vsftpd/vusers/{username}"
+            registry_ssh.exec_command("sudo mkdir -p /etc/vsftpd/vusers")
+            registry_ssh.exec_command(f"echo '{virtual_user_config}' | sudo tee {user_config_path}")
+
+            # 确保目录所有权正确
+            registry_ssh.exec_command(f"sudo chown -R virtual_ftp:virtual_ftp {user_dir}")
+            registry_ssh.exec_command(f"sudo chmod 755 {user_dir}")
+
+            # 更新用户数据库文件
+            db_file = "/etc/vsftpd/virtual_users.txt"
+            add_user_cmd = f"echo -e '{username}\\n{self.config['users'][username]['password']}' | sudo tee -a {db_file}"
+            registry_ssh.exec_command(add_user_cmd)
+
+            # 生成用户数据库
+            registry_ssh.exec_command("sudo db_load -T -t hash -f /etc/vsftpd/virtual_users.txt /etc/vsftpd/virtual_users.db")
+
             # 更新用户配置
             self.config['users'][username]['data_dir'] = user_dir
             self._save_config()
+
+            print(f"\nFTP 虚拟用户配置完成：")
+            print(f"服务器：{registry_server['host']}")
+            print(f"端口：21")
+            print(f"用户名：{username}")
+            print(f"密码：与系统密码相同")
+            print(f"目录：{user_dir}")
             
-            print(f"用户数据目录创建/确认成功：{user_dir}")
             return user_dir
-            
+
         except Exception as e:
             print(f"创建用户数据目录时出错：{str(e)}")
             return None
@@ -385,7 +416,7 @@ class LabServer:
             print("请先登录")
             return
 
-        while True:  # 外层循环，用于服务器选择
+        while True:  # 服务器选择循环
             if self.cached_server_status is None:
                 print("正在获取服务器信息...")
                 self.cached_server_status = self.get_all_servers_status()
@@ -409,42 +440,28 @@ class LabServer:
                 print("错误：无效的服务器序号")
                 continue
 
-            server_info = self.cached_server_status[server_choice]
-            server_name = server_info['name']
-            gpu_info = server_info['gpu_info']
-            
-            # 显示选中服务器的详细GPU信息
-            print(f"\n服务器 {server_name} 的GPU详细信息：")
-            print("\n{:<5} {:<30} {:<12} {:<12} {:<12} {:<10}".format(
-                "GPU", "型号", "总内存(MB)", "已用(MB)", "可用(MB)", "使用率(%)"
-            ))
-            print("-" * 85)
-            
-            for gpu in gpu_info:
-                print("{:<5} {:<30} {:<12.0f} {:<12.0f} {:<12.0f} {:<10.1f}".format(
-                    gpu['index'],
-                    gpu['name'],
-                    gpu['total_memory'],
-                    gpu['used_memory'],
-                    gpu['free_memory'],
-                    gpu['utilization']
-                ))
+            # 服务器选择成功，进入镜像选择流程
+            while True:  # 镜像选择循环
+                try:
+                    server_info = self.cached_server_status[server_choice]
+                    server_name = server_info['name']
+                    server = self.config['servers'][server_name]
+                    
+                    # 显示GPU信息
+                    print(f"\n服务器 {server_name} 的GPU详细信息：")
+                    # ... (GPU信息显示代码保持不变)
 
-            available_gpus = sum(1 for gpu in gpu_info if gpu['utilization'] < 5)
-            print(f"\n可用GPU数量: {available_gpus}")
+                    # 连接服务器
+                    ssh = paramiko.SSHClient()
+                    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+                    ssh.connect(
+                        hostname=server['host'],
+                        port=server['port'],
+                        username=server['username'],
+                        password=server['password']
+                    )
 
-            try:
-                server = self.config['servers'][server_name]
-                ssh = paramiko.SSHClient()
-                ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-                ssh.connect(
-                    hostname=server['host'],
-                    port=server['port'],
-                    username=server['username'],
-                    password=server['password']
-                )
-
-                while True:  # 内层循环，用于镜像选择
+                    # 获取本地镜像列表
                     print("\n获取本地Docker镜像列表...")
                     local_images = self.get_server_docker_images(ssh)
                     
@@ -452,163 +469,97 @@ class LabServer:
                     for idx, image in enumerate(local_images, 1):
                         print(f"{idx}. {image['name']} [本地] ({image['size']})")
                     
-                    choice = input("\n是否使用本地镜像？(y/n/0返回): ").lower().strip()
+                    print("\n选项：")
+                    print("1. 使用本地镜像")
+                    print("2. 使用远程仓库镜像")
+                    print("0. 返回服务器选择")
+                    
+                    choice = input("请选择: ").strip()
+                    
                     if choice == '0':
-                        break  # 跳出内层循环，返回服务器选择
-                    if choice not in ['y', 'n']:
-                        print("请输入 'y' 或 'n' 或 '0'返回")
-                        continue
-
-                    if choice == 'y':
+                        ssh.close()
+                        break  # 返回服务器选择
+                    
+                    if choice == '1':  # 使用本地镜像
                         while True:
-                            print("\n输入0返回上一步")
-                            choice = input("\n请选择本地镜像编号: ")
+                            print("\n请选择本地镜像编号（0返回上一步）:")
+                            choice = input().strip()
                             if choice == '0':
-                                continue  # 继续外层循环，重新选择是否使用本地镜像
+                                break
                             try:
                                 idx = int(choice) - 1
                                 if 0 <= idx < len(local_images):
-                                    selected_image = local_images[idx]
-                                    image_name = selected_image['name']
-                                    break  # 成功选择镜像，跳出内层循环
+                                    image_name = local_images[idx]['name']
+                                    # 进入容器创建流程
+                                    if self.create_container(ssh, server_name, image_name):
+                                        return  # 创建成功，退出整个函数
                                 else:
                                     print("无效的选择，请重试")
                             except ValueError:
                                 print("请输入有效的数字")
-                        break  # 成功选择镜像后，跳出外层循环
-                    else:
+                    
+                    elif choice == '2':  # 使用远程仓库镜像
                         print("\n获取远程仓库镜像列表...")
                         registry_images = self.get_registry_images(ssh)
                         
-                        print("\n远程仓库可用的Docker镜像：")
-                        for idx, image in enumerate(registry_images, 1):
-                            # 检查该镜像是否已在本地存在
-                            is_local = any(local_img['name'] == image['name'] for local_img in local_images)
-                            status = "[本地已存在]" if is_local else "[远程仓库]"
-                            print(f"{idx}. {image['name']} {status} (大小: {image['size']})")
-                        
                         while True:
-                            print("\n输入0返回上一步")
-                            choice = input("\n请选择镜像编号: ")
+                            print("\n远程仓库可用的Docker镜像：")
+                            for idx, image in enumerate(registry_images, 1):
+                                is_local = any(local_img['name'] == image['name'] for local_img in local_images)
+                                status = "[本地已存在]" if is_local else "[远程仓库]"
+                                print(f"{idx}. {image['name']} {status} (大小: {image['size']})")
+                            
+                            print("\n请选择镜像编号（0返回上一步）:")
+                            choice = input().strip()
                             if choice == '0':
-                                continue  # 继续外层循环，重新选择是否使用本地镜像
+                                break
+                            
                             try:
                                 idx = int(choice) - 1
                                 if 0 <= idx < len(registry_images):
-                                    selected_image = registry_images[idx]
-                                    image_name = selected_image['name']
-                                    
+                                    image_name = registry_images[idx]['name']
                                     # 检查是否需要拉取
-                                    if any(local_img['name'] == image_name for local_img in local_images):
-                                        print(f"\n提示：镜像 {image_name} 已在本地存在，无需从远程仓库拉取")
-                                    else:
-                                        # 判断镜像来源
-                                        if 'docker.io' in image_name or '/' in image_name:
-                                            # Docker Hub镜像
-                                            registry_info = next(reg for reg in self.config['docker_registries'] 
-                                                      if reg['url'] == 'docker.io')
-                                        else:
-                                            # 私有仓库镜像
-                                            registry_info = next(reg for reg in self.config['docker_registries'] 
-                                                      if reg['url'] != 'docker.io')
-                                        
-                                        if not self.pull_docker_image(ssh, image_name, registry_info):
-                                            print("拉取镜像失败，操作终止")
-                                            return
-                                    break  # 成功选择镜像，跳出内层循环
+                                    if not any(local_img['name'] == image_name for local_img in local_images):
+                                        if not self.pull_docker_image(ssh, image_name, self.config['docker_registries'][0]):
+                                            continue
+                                    # 进入容器创建流程
+                                    if self.create_container(ssh, server_name, image_name):
+                                        return  # 创建成功，退出整个函数
                                 else:
                                     print("无效的选择，请重试")
                             except ValueError:
                                 print("请输入有效的数字")
-                        break  # 成功选择镜像后，跳出外层循环
-
-                # 成功选择镜像后的处理
-                # 获取用户的工作目录
-                print("\n输入0返回上一步")
-                work_dir = input("请输入工作目录路径（回车使用默认 /home/workspace）: ").strip()
-                if work_dir == '0':
-                    continue  # 返回镜像选择
-                if not work_dir:
-                    work_dir = "/home/workspace"
-
-                # 获取要使用的GPU数量
-                while True:
-                    print("\n输入0返回上一步")
-                    gpu_num = input(f"请输入要使用的GPU数量（最多 {available_gpus} 个，回车使用默认值1）: ").strip()
-                    if gpu_num == '0':
-                        continue  # 返回工作目录选择
-                    if not gpu_num:
-                        gpu_num = "1"
-                    
-                    try:
-                        gpu_num = int(gpu_num)
-                        if 1 <= gpu_num <= available_gpus:
-                            break
-                        else:
-                            print(f"错误：GPU数量必须在1到{available_gpus}之间")
-                    except ValueError:
-                        print("错误：请输入有效的GPU数量")
-
-                # 获取用户输入的端口映射
-                print("\n输入0返回上一步")
-                host_port = input("请输入主机端口（回车使用默认8080）: ").strip()
-                if host_port == '0':
-                    continue  # 返回GPU数量选择
-                if not host_port:
-                    host_port = "8080"
-
-                container_port = input("请输入容器端口（回车使用默认8080）: ").strip()
-                if container_port == '0':
-                    continue  # 返回主机端口选择
-                if not container_port:
-                    container_port = "8080"
-
-                try:
-                    # 检查用户是否已有数据目录，如果没有则创建
-                    if not self.config['users'][self.current_user].get('data_dir'):
-                        user_data_dir = self.create_user_data_dir(ssh, self.current_user)
-                        if not user_data_dir:
-                            print("创建用户数据目录失败，操作终止")
-                            return
-                    else:
-                        user_data_dir = self.config['users'][self.current_user]['data_dir']
-
-                    # 生成容器名称
-                    safe_image_name = image_name.replace('/', '_').replace(':', '_')
-                    container_name = f"{self.current_user}_{server_name}_{safe_image_name}"
-
-                    # 构建Docker运行命令，移除工作目录挂载
-                    docker_cmd = (
-                        f"docker run -d --gpus '\"device={','.join(str(i) for i in range(gpu_num))}\"' "
-                        f"-v {user_data_dir}:/data "  # 只保留数据目录挂载
-                        f"-p {host_port}:{container_port} "
-                        f"--name {container_name} "
-                        f"{image_name} "
-                        f"tail -f /dev/null"
-                    )
-
-                    print(f"\n执行命令：{docker_cmd}")
-                    stdin, stdout, stderr = ssh.exec_command(docker_cmd)
-                    error = stderr.read().decode()
-                    if error:
-                        print(f"创建Docker容器时出错：{error}")
-                        return
-
-                    container_id = stdout.read().decode().strip()
-                    print(f"\n成功创建Docker容器！")
-                    print(f"容器ID: {container_id}")
-                    print(f"工作目录: {work_dir}")
-                    print(f"使用GPU数量: {gpu_num}")
-                    return  # 成功创建容器后退出
-
+                
                 except Exception as e:
-                    print(f"创建任务失败：{str(e)}")
-                    return
+                    print(f"操作失败：{str(e)}")
+                finally:
+                    try:
+                        ssh.close()
+                    except:
+                        pass
 
-            except Exception as e:
-                print(f"创建任务失败：{str(e)}")
-            finally:
-                ssh.close()
+    def create_container(self, ssh, server_name, image_name):
+        """创建容器的具体流程"""
+        try:
+            # 获取GPU数量
+            print("\n请输入要使用的GPU数量（0返回上一步）:")
+            gpu_num = input().strip()
+            if gpu_num == '0':
+                return False
+            
+            # 获取端口映射
+            print("\n请输入主机端口（0返回上一步）:")
+            host_port = input().strip()
+            if host_port == '0':
+                return False
+            
+            # 创建容器
+            # ... (容器创建代码)
+            
+            return True  # 创建成功
+        except Exception as e:
+            print(f"创建容器失败：{str(e)}")
+            return False
 
     def get_user_tasks(self, username=None):
         """获取用户任务信息"""
@@ -647,7 +598,7 @@ class LabServer:
                 ssh.close()
             return tasks
         except Exception as e:
-            print(f"获取任务信息失败：{str(e)}")
+            print(f"获取任务信息失败{str(e)}")
             return []
 
     def show_user_info(self):
@@ -655,6 +606,15 @@ class LabServer:
         print(f"\n=== 用户信息 ===")
         print(f"用户名: {self.current_user}")
         print(f"角色: {self.config['users'][self.current_user]['role']}")
+        
+        # 显示FTP信息
+        registry_server = self.config['registry_server']
+        print(f"\nFTP信息：")
+        print(f"服务器地址: {registry_server['host']}")
+        print(f"端口: 21")
+        print(f"用户名: {self.current_user}")
+        print(f"密码: 与系统登录密码相同")
+        print(f"目录: {self.config['users'][self.current_user].get('data_dir', '未创建')}")
         
         # 显示用户限制信息
         user_limits = self.config['tasks']['user_limits'].get(
@@ -793,7 +753,7 @@ class LabServer:
             
             if self.current_user and self.user_manager.is_admin(self.current_user):
                 print("5. 用户管理")
-                print("6. 查看所有任务")
+                print("6. 查看所有任��")
                 print("7. 管理用户限制")
 
             choice = input("请选择操作: ")

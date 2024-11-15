@@ -1,5 +1,6 @@
 import yaml
 import getpass
+import paramiko
 
 class UserManager:
     def __init__(self, config):
@@ -27,13 +28,19 @@ class UserManager:
 
     def add_user(self, username, password, role='user'):
         if not self.config['users'].get(username):
+            # 创建用户目录路径（仅用于显示）
+            user_dir = f"{self.config['registry_server']['nfs_path']}/{username}"
+            
             self.config['users'][username] = {
                 'username': username,
                 'password': password,
-                'role': role
+                'role': role,
+                'data_dir': user_dir
             }
+            
             self._save_config()
             print(f"用户 {username} 添加成功")
+            print(f"FTP目录：{user_dir}")
         else:
             print("用户已存在")
 
