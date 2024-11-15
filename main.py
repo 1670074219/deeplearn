@@ -610,6 +610,173 @@ class LabServer:
             finally:
                 ssh.close()
 
+    def get_user_tasks(self, username=None):
+        """获取用户任务信息"""
+        try:
+            tasks = []
+            for server_name, server_info in self.config['servers'].items():
+                ssh = paramiko.SSHClient()
+                ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+                ssh.connect(
+                    hostname=server_info['host'],
+                    port=server_info['port'],
+                    username=server_info['username'],
+                    password=server_info['password']
+                )
+                
+                # 获取所有运行中的容器
+                if username:
+                    cmd = f"docker ps --format '{{{{.ID}}}}\t{{{{.Names}}}}\t{{{{.Status}}}}\t{{{{.RunningFor}}}}' | grep {username}"
+                else:
+                    cmd = "docker ps --format '{{.ID}}\t{{.Names}}\t{{.Status}}\t{{.RunningFor}}'"
+                
+                stdin, stdout, stderr = ssh.exec_command(cmd)
+                output = stdout.read().decode()
+                
+                for line in output.strip().split('\n'):
+                    if line:
+                        container_id, name, status, running_time = line.split('\t')
+                        tasks.append({
+                            'server': server_name,
+                            'container_id': container_id,
+                            'name': name,
+                            'status': status,
+                            'running_time': running_time
+                        })
+                
+                ssh.close()
+            return tasks
+        except Exception as e:
+            print(f"获取任务信息失败：{str(e)}")
+            return []
+
+    def show_user_info(self):
+        """显示用户信息和任务"""
+        print(f"\n=== 用户信息 ===")
+        print(f"用户名: {self.current_user}")
+        print(f"角色: {self.config['users'][self.current_user]['role']}")
+        
+        # 显示用户限制信息
+        user_limits = self.config['tasks']['user_limits'].get(
+            self.current_user,
+            self.config['tasks']['user_limits']['default']
+        )
+        print(f"\n使用限制：")
+        print(f"最大容器数: {user_limits['max_containers']}")
+        print(f"最大GPU数: {user_limits['max_gpus']}")
+        print(f"时间限制: {user_limits['time_limit']}小时")
+        
+        # 显示正在运行的任务
+        print("\n正在运行的任务：")
+        tasks = self.get_user_tasks(self.current_user)
+        if tasks:
+            print("\n{:<15} {:<20} {:<40} {:<15} {:<20}".format(
+                "服务器", "容器ID", "容器名称", "状态", "运行时间"
+            ))
+            print("-" * 110)
+            for task in tasks:
+                print("{:<15} {:<20} {:<40} {:<15} {:<20}".format(
+                    task['server'],
+                    task['container_id'],
+                    task['name'],
+                    task['status'],
+                    task['running_time']
+                ))
+        else:
+            print("暂无运行中的任务")
+
+    def change_password(self):
+        """修改用户密码"""
+        old_password = getpass.getpass("请输入当前密码: ")
+        if old_password != self.config['users'][self.current_user]['password']:
+            print("当前密码错误")
+            return
+        
+        new_password = getpass.getpass("请输入新密码: ")
+        confirm_password = getpass.getpass("请确认新密码: ")
+        
+        if new_password != confirm_password:
+            print("两次输入的密码不一致")
+            return
+        
+        self.config['users'][self.current_user]['password'] = new_password
+        self._save_config()
+        print("密码修改成功！")
+
+    def show_all_tasks(self):
+        """管理员查看所有用户任务"""
+        if not self.user_manager.is_admin(self.current_user):
+            print("权限不足")
+            return
+        
+        print("\n=== 所有用户任务信息 ===")
+        tasks = self.get_user_tasks()
+        if tasks:
+            print("\n{:<15} {:<20} {:<40} {:<15} {:<20}".format(
+                "服务器", "容器ID", "容器名称", "状态", "运行时间"
+            ))
+            print("-" * 110)
+            for task in tasks:
+                print("{:<15} {:<20} {:<40} {:<15} {:<20}".format(
+                    task['server'],
+                    task['container_id'],
+                    task['name'],
+                    task['status'],
+                    task['running_time']
+                ))
+        else:
+            print("暂无运行中的任务")
+
+    def manage_user_limits(self):
+        """管理用户使用限制"""
+        if not self.user_manager.is_admin(self.current_user):
+            print("权限不足")
+            return
+        
+        while True:
+            print("\n=== 管理用户限制 ===")
+            print("1. 查看所有用户限制")
+            print("2. 设置用户限制")
+            print("3. 返回")
+            
+            choice = input("请选择操作: ")
+            
+            if choice == '1':
+                print("\n当前用户限制：")
+                for username in self.config['users']:
+                    limits = self.config['tasks']['user_limits'].get(
+                        username,
+                        self.config['tasks']['user_limits']['default']
+                    )
+                    print(f"\n用户: {username}")
+                    print(f"最大容器数: {limits['max_containers']}")
+                    print(f"最大GPU数: {limits['max_gpus']}")
+                    print(f"时间限制: {limits['time_limit']}小时")
+            
+            elif choice == '2':
+                username = input("请输入用户名: ")
+                if username not in self.config['users']:
+                    print("用户不存在")
+                    continue
+                
+                try:
+                    max_containers = int(input("请输入最大容器数: "))
+                    max_gpus = int(input("请输入最大GPU数: "))
+                    time_limit = int(input("请输入时间限制(小时): "))
+                    
+                    self.config['tasks']['user_limits'][username] = {
+                        'max_containers': max_containers,
+                        'max_gpus': max_gpus,
+                        'time_limit': time_limit
+                    }
+                    self._save_config()
+                    print("设置成功！")
+                except ValueError:
+                    print("输入无效，请输入数字")
+            
+            elif choice == '3':
+                break
+
     def show_menu(self):
         # 先进行登录验证
         if not self.login():
@@ -620,20 +787,32 @@ class LabServer:
             print("\n=== 实验室服务器管理系统 ===")
             print(f"当前用户: {self.current_user}")
             print("1. 创建深度学习任务")
-            print("2. 退出")
+            print("2. 用户信息")
+            print("3. 修改密码")
+            print("4. 退出")
             
             if self.current_user and self.user_manager.is_admin(self.current_user):
-                print("3. 用户管理")
+                print("5. 用户管理")
+                print("6. 查看所有任务")
+                print("7. 管理用户限制")
 
             choice = input("请选择操作: ")
 
             if choice == '1':
                 self.create_dl_task()
             elif choice == '2':
+                self.show_user_info()
+            elif choice == '3':
+                self.change_password()
+            elif choice == '4':
                 print("感谢使用，再见！")
                 break
-            elif choice == '3' and self.current_user and self.user_manager.is_admin(self.current_user):
+            elif choice == '5' and self.user_manager.is_admin(self.current_user):
                 self.user_manager.manage_users()
+            elif choice == '6' and self.user_manager.is_admin(self.current_user):
+                self.show_all_tasks()
+            elif choice == '7' and self.user_manager.is_admin(self.current_user):
+                self.manage_user_limits()
             else:
                 print("无效的选择，请重试")
 

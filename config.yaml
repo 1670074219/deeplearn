@@ -68,3 +68,11 @@ users:
     password: password1
     role: user
     username: user1
+# 在config.yaml中添加任务记录部分
+tasks:
+  task_records: {}  # 用于存储所有任务记录
+  user_limits:  # 用于存储用户使用限制
+    default:  # 默认限制
+      max_containers: 5  # 最大容器数
+      max_gpus: 4  # 最大GPU数
+      time_limit: 168  # 默认时间限制(小时)
