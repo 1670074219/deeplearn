@@ -14,13 +14,13 @@ docker_registries:
 - name: 公共仓库
   url: docker.io
 registry_server:
-  host: "219.216.101.242"
+  host: 219.216.101.242
+  nfs_host: 219.216.101.242
+  nfs_path: /nfs/data
+  password: siton@2024
   port: 22
-  username: "root"
-  password: "siton@2024"
   registry_port: 8888
-  nfs_path: "/nfs/data"
-  nfs_host: "219.216.101.242"
+  username: root
 servers:
   server1:
     host: 219.216.99.133
@@ -32,12 +32,37 @@ servers:
     password: sitonholy@neu
     port: 22
     username: root
+  server3:
+    host: 219.216.99.5
+    password: sitonholy@neu
+    port: 22
+    username: root
+  server4:
+    host: 219.216.99.6
+    password: sitonholy@neu
+    port: 22
+    username: root
+  server5:
+    host: 219.216.99.7
+    password: sitonholy@neu
+    port: 22
+    username: root
+  server6:
+    host: 219.216.99.10
+    password: siton@2024
+    port: 22
+    username: root
 users:
   admin:
     data_dir: ''
     password: admin_password
     role: admin
     username: admin
+  lanzetian:
+    data_dir: /nfs/data/lanzetian
+    password: q1w2e3az
+    role: user
+    username: lanzetian
   user1:
     data_dir: /nfs/data/user1
     password: password1
