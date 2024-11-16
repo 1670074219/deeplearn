@@ -66,6 +66,17 @@ task_records:
     - '3'
     server: server2
     timestamp: 1731754437
+  - container: lanzetian-server1-1731757717
+    gpus:
+    - '0'
+    server: server1
+    timestamp: 1731757719
+  user1:
+  - container: user1-server1-1731758194
+    gpus:
+    - '2'
+    server: server1
+    timestamp: 1731758210
 tasks:
   task_records: {}
   user_limits:

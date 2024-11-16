@@ -3,13 +3,21 @@ import paramiko
 import getpass
 import time
 from user_manager import UserManager
+from config_manager import ConfigManager
+from ssh_manager import SSHManager
+from docker_manager import DockerManager
+from log_manager import LogManager
 
 class LabServer:
     def __init__(self):
-        self.config = self.load_config()
-        self.user_manager = UserManager(self.config)
+        self.config_manager = ConfigManager('config.yaml')
+        self.ssh_manager = SSHManager()
+        self.docker_manager = DockerManager()
+        self.log_manager = LogManager('server.log')
+        self.config = self.config_manager.load_config()
         self.current_user = None
         self.cached_server_status = None
+        self.user_manager = UserManager(self.config)
 
     def load_config(self):
         with open('config.yaml', 'r', encoding='utf-8') as f:
@@ -268,7 +276,7 @@ class LabServer:
             if not images:
                 print("未找到任何镜像")
             else:
-                print(f"找到 {len(images)} 个镜像")
+                print(f"找到 {len(images)} 镜像")
             
             registry_ssh.close()
             return images
@@ -300,13 +308,13 @@ class LabServer:
             # 创建用户目录
             user_dir = f"{registry_server['nfs_path']}/{username}"
             
-            # 先检查目录是否存在
+            # 目录是否存在
             check_cmd = f"[ -d {user_dir} ] && echo 'exists' || echo 'not exists'"
             stdin, stdout, stderr = registry_ssh.exec_command(check_cmd)
             if stdout.read().decode().strip() == 'exists':
                 print(f"用户目录已存在：{user_dir}")
             else:
-                # 创建目录并
+                # 创建录并
                 cmd = f"sudo mkdir -p {user_dir} && sudo chmod 755 {user_dir}"
                 print(f"正在创建用户数据目录：{user_dir}")
                 stdin, stdout, stderr = registry_ssh.exec_command(cmd)
@@ -432,17 +440,17 @@ allow_writeable_chroot=YES
                     )
                     user_data_dir = self.create_user_data_dir(registry_ssh, self.current_user)
                     if not user_data_dir:
-                        print("无法创建用户数据目录，请联系管理员")
+                        print("无法创建户数据目录，请联系管理员")
                         return
                 finally:
                     if registry_ssh:
                         registry_ssh.close()
 
             if not self.current_user:
-                print("请先登录")
+                print("请登录")
                 return
 
-            while True:  # 服务器选循环
+            while True:  # 服务器选择循环
                 if self.cached_server_status is None:
                     print("正在获取服务器信息...")
                     self.cached_server_status = self.get_all_servers_status()
@@ -463,35 +471,36 @@ allow_writeable_chroot=YES
                     continue
                 
                 if server_choice not in self.cached_server_status:
-                    print("错误：无效的服务器号")
+                    print("错误：无效的服务序号")
                     continue
 
-                # 服务器选择成功，进入镜像选择流程
+                # 服务器选择成功，建立SSH连接
+                server_info = self.cached_server_status[server_choice]
+                server_name = server_info['name']
+                server = self.config['servers'][server_name]
+                
+                # 连接服务器
+                ssh = paramiko.SSHClient()
+                ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+                ssh.connect(
+                    hostname=server['host'],
+                    port=server['port'],
+                    username=server['username'],
+                    password=server['password']
+                )
+                ssh_connections[server_name] = ssh
+
+                # 进入镜像选择流程
                 while True:  # 镜像选择循环
                     try:
-                        server_info = self.cached_server_status[server_choice]
-                        server_name = server_info['name']
-                        server = self.config['servers'][server_name]
-                        
-                        # 显示GPU信息
-                        print(f"\n服务器 {server_name} 的GPU详细信息")
-                        # ... (GPU信息显示代码保持不变)
-
-                        # 连接服务器
-                        ssh = paramiko.SSHClient()
-                        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-                        ssh.connect(
-                            hostname=server['host'],
-                            port=server['port'],
-                            username=server['username'],
-                            password=server['password']
-                        )
-                        ssh_connections[server_name] = ssh
-
                         # 获取本地镜像列表
                         print("\n获取本地Docker镜像列表...")
                         local_images = self.get_server_docker_images(ssh)
                         
+                        if not local_images:
+                            print("未找到本地镜像")
+                            break
+
                         print("\n本地可用的Docker镜像：")
                         for idx, image in enumerate(local_images, 1):
                             print(f"{idx}. {image['name']} [本地] ({image['size']})")
@@ -504,28 +513,26 @@ allow_writeable_chroot=YES
                         choice = input("请选择: ").strip()
                         
                         if choice == '0':
-                            ssh.close()
                             break  # 返回服务器选择
                         
                         if choice == '1':  # 使用本地镜像
-                            while True:
-                                print("\n请选择本地镜像编号（0回上一步）:")
-                                choice = input().strip()
-                                if choice == '0':
-                                    break
-                                try:
-                                    idx = int(choice) - 1
-                                    if 0 <= idx < len(local_images):
-                                        image_name = local_images[idx]['name']
-                                        # 进入容器创建流程
-                                        if self.create_container(ssh, server_name, image_name):
-                                            return  # 创建成功，退出整个函数
-                                    else:
-                                        print("无效的选择，请重试")
-                                except ValueError:
-                                    print("请输入有效的数字")
+                            print("\n请选择本地镜像编号（0返回上一步）:")
+                            choice = input().strip()
+                            if choice == '0':
+                                continue
+                            try:
+                                idx = int(choice) - 1
+                                if 0 <= idx < len(local_images):
+                                    image_name = local_images[idx]['name']
+                                    # 获取GPU信息并创建容器
+                                    if self.create_container(ssh, server_name, image_name):
+                                        return  # 创建成功，退出整个函数
+                                else:
+                                    print("无效的选择，请重试")
+                            except ValueError:
+                                print("请输入有效的数字")
                         
-                        elif choice == '2':  # 使用远程仓库镜像
+                        elif choice == '2':
                             print("\n获取远程仓库镜像列表...")
                             registry_images = self.get_registry_images(ssh)
                             
@@ -549,7 +556,7 @@ allow_writeable_chroot=YES
                                         if not any(local_img['name'] == image_name for local_img in local_images):
                                             if not self.pull_docker_image(ssh, image_name, self.config['docker_registries'][0]):
                                                 continue
-                                        # 进入容器建流程
+                                        # 进入容器建流
                                         if self.create_container(ssh, server_name, image_name):
                                             return  # 创建成功，退出整个函数
                                     else:
@@ -559,14 +566,9 @@ allow_writeable_chroot=YES
                     
                     except Exception as e:
                         print(f"操作失败：{str(e)}")
-                    finally:
-                        try:
-                            ssh.close()
-                        except:
-                            pass
-
+                    
         finally:
-            # 确保关闭所有SSH连接
+            # 清理所有SSH连接
             for ssh in ssh_connections.values():
                 try:
                     ssh.close()
@@ -576,13 +578,13 @@ allow_writeable_chroot=YES
     def create_container(self, ssh, server_name, image_name):
         """创建容器的具体流程"""
         try:
-            # 获取可用的GPU
+            # 获取GPU信息
             gpu_info = self.check_gpu_status(server_name)
             if not gpu_info:
                 print("无法获取GPU信息")
                 return False
-            
-            # 显示所有GPU信息供用户选择
+
+            # 显示GPU信息并选择GPU
             print("\n可用的GPU列表：")
             print(f"{'序号':<5} {'GPU型号':<30} {'显存使用':<20} {'使用率':<10}")
             print("-" * 65)
@@ -599,12 +601,13 @@ allow_writeable_chroot=YES
                 return False
 
             # 让用户选择GPU
-            print("\n请输入要使用的GPU编号（多个GPU用逗号分隔，如：0,1,2）（输入0返回上一步）:")
+            print("\n请输入要使用的GPU编号（多个GPU用逗号分隔，如：0,1,2）")
+            print("输入0返回上一步")
             gpu_choice = input().strip()
             if gpu_choice == '0':
                 return False
 
-            # 验证GPU选择
+            # 验证GPU���择
             selected_gpus = [g.strip() for g in gpu_choice.split(',')]
             
             # 检查输入的GPU是否有效
@@ -623,7 +626,7 @@ allow_writeable_chroot=YES
                 return False
 
             # 获取端口映射
-            print("\n请输入主机端口（0返回上一步）:")
+            print("\n请输入主机端口（输入0返回上一步）:")
             host_port = input().strip()
             if host_port == '0':
                 return False
@@ -795,7 +798,7 @@ allow_writeable_chroot=YES
                     password=server_info['password']
                 )
                 
-                # 获取所有运行中的容器
+                # 获取所运行中的容器
                 if username:
                     cmd = f"docker ps --format '{{{{.ID}}}}\t{{{{.Names}}}}\t{{{{.Status}}}}\t{{{{.RunningFor}}}}' | grep {username}"
                 else:
@@ -822,7 +825,7 @@ allow_writeable_chroot=YES
             return []
 
     def show_user_info(self):
-        """显示用户信息和任务"""
+        """显用户信息和任务"""
         print(f"\n=== 用户信息 ===")
         print(f"用户名: {self.current_user}")
         print(f"角色: {self.config['users'][self.current_user]['role']}")
@@ -846,7 +849,7 @@ allow_writeable_chroot=YES
         print(f"最大GPU数：{user_limits['max_gpus']}")
         print(f"时间限制：{user_limits['time_limit']}小时")
         
-        # 显示正在运行的任务
+        # 显示正在运行的任
         print("\n正在运行的任务：")
         tasks = self.get_user_tasks(self.current_user)
         if tasks:
@@ -908,7 +911,7 @@ allow_writeable_chroot=YES
             print("暂无运行中的任务")
 
     def manage_user_limits(self):
-        """管理用户使用限制"""
+        """管理用使用限制"""
         if not self.user_manager.is_admin(self.current_user):
             print("权限不足")
             return
@@ -989,7 +992,7 @@ allow_writeable_chroot=YES
             elif choice == '4':
                 self.stop_user_task()
             elif choice == '5':
-                print("感谢使用，再见！")
+                print("感谢使用，再！")
                 break
             elif choice == '6' and self.user_manager.is_admin(self.current_user):
                 self.user_manager.manage_users()
@@ -1021,7 +1024,7 @@ allow_writeable_chroot=YES
         self._save_config()
 
     def stop_container(self, ssh, server_name, container_name):
-        """停止指定的容器"""
+        """停止指定容器"""
         try:
             print(f"\n正在停止容器 {container_name}...")
             stop_cmd = f"docker stop {container_name}"
@@ -1056,7 +1059,7 @@ allow_writeable_chroot=YES
             while True:
                 print("\n当前运行的任务：")
                 print("\n{:<5} {:<15} {:<20} {:<40} {:<15} {:<20}".format(
-                    "序号", "服务器", "容器ID", "容器名称", "状态", "运行时间"
+                    "序号", "服器", "容器ID", "容器名称", "状态", "运行时间"
                 ))
                 print("-" * 115)
                 

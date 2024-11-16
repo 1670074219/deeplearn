@@ -1,93 +1,5 @@
 加载配置文件失败：[Errno 2] No such file or directory: 'config.yaml'
 
-=== 开始检查容器运行时间 (2024-11-16 06:20:01) ===
-检查过程中出错：'NoneType' object is not subscriptable
-加载配置文件失败：[Errno 2] No such file or directory: 'config.yaml'
-
-=== 开始检查容器运行时间 (2024-11-16 06:30:02) ===
-检查过程中出错：'NoneType' object is not subscriptable
-加载配置文件失败：[Errno 2] No such file or directory: 'config.yaml'
-
-=== 开始检查容器运行时间 (2024-11-16 06:40:01) ===
-检查过程中出错：'NoneType' object is not subscriptable
-加载配置文件失败：[Errno 2] No such file or directory: 'config.yaml'
-
-=== 开始检查容器运行时间 (2024-11-16 06:50:01) ===
-检查过程中出错：'NoneType' object is not subscriptable
-加载配置文件失败：[Errno 2] No such file or directory: 'config.yaml'
-
-=== 开始检查容器运行时间 (2024-11-16 07:00:02) ===
-检查过程中出错：'NoneType' object is not subscriptable
-加载配置文件失败：[Errno 2] No such file or directory: 'config.yaml'
-
-=== 开始检查容器运行时间 (2024-11-16 07:10:01) ===
-检查过程中出错：'NoneType' object is not subscriptable
-加载配置文件失败：[Errno 2] No such file or directory: 'config.yaml'
-
-=== 开始检查容器运行时间 (2024-11-16 07:20:01) ===
-检查过程中出错：'NoneType' object is not subscriptable
-加载配置文件失败：[Errno 2] No such file or directory: 'config.yaml'
-
-=== 开始检查容器运行时间 (2024-11-16 07:30:01) ===
-检查过程中出错：'NoneType' object is not subscriptable
-加载配置文件失败：[Errno 2] No such file or directory: 'config.yaml'
-
-=== 开始检查容器运行时间 (2024-11-16 07:40:01) ===
-检查过程中出错：'NoneType' object is not subscriptable
-加载配置文件失败：[Errno 2] No such file or directory: 'config.yaml'
-
-=== 开始检查容器运行时间 (2024-11-16 07:50:01) ===
-检查过程中出错：'NoneType' object is not subscriptable
-加载配置文件失败：[Errno 2] No such file or directory: 'config.yaml'
-
-=== 开始检查容器运行时间 (2024-11-16 08:00:02) ===
-检查过程中出错：'NoneType' object is not subscriptable
-加载配置文件失败：[Errno 2] No such file or directory: 'config.yaml'
-
-=== 开始检查容器运行时间 (2024-11-16 08:10:01) ===
-检查过程中出错：'NoneType' object is not subscriptable
-加载配置文件失败：[Errno 2] No such file or directory: 'config.yaml'
-
-=== 开始检查容器运行时间 (2024-11-16 08:20:01) ===
-检查过程中出错：'NoneType' object is not subscriptable
-加载配置文件失败：[Errno 2] No such file or directory: 'config.yaml'
-
-=== 开始检查容器运行时间 (2024-11-16 08:30:01) ===
-检查过程中出错：'NoneType' object is not subscriptable
-加载配置文件失败：[Errno 2] No such file or directory: 'config.yaml'
-
-=== 开始检查容器运行时间 (2024-11-16 08:40:01) ===
-检查过程中出错：'NoneType' object is not subscriptable
-加载配置文件失败：[Errno 2] No such file or directory: 'config.yaml'
-
-=== 开始检查容器运行时间 (2024-11-16 08:50:01) ===
-检查过程中出错：'NoneType' object is not subscriptable
-加载配置文件失败：[Errno 2] No such file or directory: 'config.yaml'
-
-=== 开始检查容器运行时间 (2024-11-16 09:00:01) ===
-检查过程中出错：'NoneType' object is not subscriptable
-加载配置文件失败：[Errno 2] No such file or directory: 'config.yaml'
-
-=== 开始检查容器运行时间 (2024-11-16 09:10:02) ===
-检查过程中出错：'NoneType' object is not subscriptable
-加载配置文件失败：[Errno 2] No such file or directory: 'config.yaml'
-
-=== 开始检查容器运行时间 (2024-11-16 09:20:01) ===
-检查过程中出错：'NoneType' object is not subscriptable
-加载配置文件失败：[Errno 2] No such file or directory: 'config.yaml'
-
-=== 开始检查容器运行时间 (2024-11-16 09:30:01) ===
-检查过程中出错：'NoneType' object is not subscriptable
-加载配置文件失败：[Errno 2] No such file or directory: 'config.yaml'
-
-=== 开始检查容器运行时间 (2024-11-16 09:40:01) ===
-检查过程中出错：'NoneType' object is not subscriptable
-加载配置文件失败：[Errno 2] No such file or directory: 'config.yaml'
-
-=== 开始检查容器运行时间 (2024-11-16 09:50:01) ===
-检查过程中出错：'NoneType' object is not subscriptable
-加载配置文件失败：[Errno 2] No such file or directory: 'config.yaml'
-
 === 开始检查容器运行时间 (2024-11-16 10:00:01) ===
 检查过程中出错：'NoneType' object is not subscriptable
 加载配置文件失败：[Errno 2] No such file or directory: 'config.yaml'
@@ -163,6 +75,42 @@
 检查容器：lanzetian-server2-1731754425
 运行时间：0.4小时
 时间限制：1小时
+容器运行时间正常，继续运行
+
+=== 检查完成 ===
+尝试加载配置文件：/data/test/config.yaml
+
+=== 开始检查容器运行时间 (2024-11-16 11:30:01) ===
+
+检查容器：lanzetian-server2-1731754425
+运行时间：0.6小时
+时间限制：1小时
+容器运行时间正常，继续运行
+
+=== 检查完成 ===
+尝试加载配置文件：/data/test/config.yaml
+
+=== 开始检查容器运行时间 (2024-11-16 11:40:01) ===
+
+检查容器：lanzetian-server2-1731754425
+运行时间：0.8小时
+时间限制：1小时
+容器运行时间正常，继续运行
+
+=== 检查完成 ===
+尝试加载配置文件：/data/test/config.yaml
+
+=== 开始检查容器运行时间 (2024-11-16 11:50:01) ===
+
+检查容器：lanzetian-server1-1731757717
+运行时间：0.0小时
+时间限制：1小时
+容器运行时间正常，继续运行
+
+检查容器：lanzetian-server2-1731754425
+运行时间：0.9小时
+时间限制：1小时
+成功发送提醒邮件到 3439986898@qq.com
 容器运行时间正常，继续运行
 
 === 检查完成 ===

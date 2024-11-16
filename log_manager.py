@@ -1,11 +1,13 @@
 import os
 from datetime import datetime
+from file_lock import FileLock
 
 class LogManager:
     def __init__(self, log_file, max_lines=100):
         self.log_file = log_file
         self.max_lines = max_lines
         self.backup_dir = os.path.join(os.path.dirname(log_file), 'log_backup')
+        self.lock = FileLock(log_file)
         
         # 创建备份目录
         if not os.path.exists(self.backup_dir):
@@ -66,3 +68,13 @@ class LogManager:
                 
         except Exception as e:
             print(f"清理旧备份文件失败：{str(e)}") 
+    
+    def write_log(self, message):
+        """线程安全的日志写入"""
+        try:
+            if self.lock.acquire():
+                with open(self.log_file, 'a', encoding='utf-8') as f:
+                    f.write(f"{message}\n")
+                self.lock.release()
+        except Exception as e:
+            print(f"写入日志失败：{str(e)}") 
