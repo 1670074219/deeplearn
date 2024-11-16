@@ -3,6 +3,9 @@ import paramiko
 import time
 import os
 from datetime import datetime, timedelta
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 class ContainerTimeChecker:
     def __init__(self):
@@ -170,6 +173,41 @@ class ContainerTimeChecker:
         except Exception as e:
             print(f"保存配置文件失败：{str(e)}")
 
+    def send_email(self, to_email, subject, body):
+        """发送邮件"""
+        try:
+            # 创建邮件
+            msg = MIMEMultipart()
+            msg['From'] = self.config['email_settings']['sender_email']
+            msg['To'] = to_email
+            msg['Subject'] = subject
+            
+            # 添加正文
+            msg.attach(MIMEText(body, 'plain'))
+            
+            # 连接SMTP服务器
+            server = smtplib.SMTP(
+                self.config['email_settings']['smtp_server'],
+                self.config['email_settings']['smtp_port']
+            )
+            server.starttls()
+            
+            # 登录
+            server.login(
+                self.config['email_settings']['sender_email'],
+                self.config['email_settings']['sender_password']
+            )
+            
+            # 发送邮件
+            server.send_message(msg)
+            server.quit()
+            
+            print(f"成功发送提醒邮件到 {to_email}")
+            return True
+        except Exception as e:
+            print(f"发送邮件失败：{str(e)}")
+            return False
+
     def check_and_stop_overtime_containers(self):
         """检查并停止超时的容器"""
         try:
@@ -179,6 +217,8 @@ class ContainerTimeChecker:
             if not containers:
                 print("未发现正在运行的容器")
                 return
+            
+            warning_threshold = self.config['notification_settings']['warning_threshold']
             
             for container in containers:
                 user = container['user']
@@ -194,12 +234,55 @@ class ContainerTimeChecker:
                 print(f"运行时间：{running_hours:.1f}小时")
                 print(f"时间限制：{time_limit}小时")
                 
+                # 检查是否需要发送提醒邮件
+                if running_hours >= (time_limit * warning_threshold) and running_hours < time_limit:
+                    user_email = self.config['users'][user].get('email')
+                    if user_email:
+                        remaining_hours = time_limit - running_hours
+                        subject = "容器运行时间提醒"
+                        body = f"""
+您好，{user}：
+
+您的容器 {container['name']} 即将达到运行时间限制。
+
+当前状态：
+- 已运行时间：{running_hours:.1f}小时
+- 时间限制：{time_limit}小时
+- 剩余时间：{remaining_hours:.1f}小时
+- 运行服务器：{container['server']}
+
+请注意保存您的工作，容器将在达到时间限制后自动停止。
+
+此邮件为系统自动发送，请勿回复。
+"""
+                        self.send_email(user_email, subject, body)
+                
                 if running_hours > time_limit:
                     print(f"容器 {container['name']} 已超过运行时间限制")
                     print(f"用户：{user}")
                     print(f"服务器：{container['server']}")
                     print(f"已运行：{running_hours:.1f}小时")
                     print(f"限制时间：{time_limit}小时")
+                    
+                    # 发送停止通知邮件
+                    user_email = self.config['users'][user].get('email')
+                    if user_email:
+                        subject = "容器已自动停止通知"
+                        body = f"""
+您好，{user}：
+
+您的容器 {container['name']} 已达到运行时间限制，系统已自动停止。
+
+容器信息：
+- 运行时间：{running_hours:.1f}小时
+- 时间限制：{time_limit}小时
+- 运行服务器：{container['server']}
+
+如需继续使用，请重新创建容器。
+
+此邮件为系统自动发送，请勿回复。
+"""
+                        self.send_email(user_email, subject, body)
                     
                     if self.stop_container(self.connect_to_server(container['server']), container['server'], container['name']):
                         print(f"已停止超时容器：{container['name']}")
