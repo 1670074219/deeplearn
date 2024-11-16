@@ -192,7 +192,7 @@ class LabServer:
                     if "Client.Timeout exceeded" in error:
                         print("拉取超时，可能是网络问题。建议：")
                         print("1. 检查服务器网络连接")
-                        print("2. 尝试使用其他��像源")
+                        print("2. 尝试使用其他像源")
                         print("3. 如果可能，考虑使用私有仓库")
                     print(f"拉取镜像失败：{error}")
                     return False
@@ -549,7 +549,7 @@ allow_writeable_chroot=YES
                                         if not any(local_img['name'] == image_name for local_img in local_images):
                                             if not self.pull_docker_image(ssh, image_name, self.config['docker_registries'][0]):
                                                 continue
-                                        # 进入容器��建流程
+                                        # 进入容器建流程
                                         if self.create_container(ssh, server_name, image_name):
                                             return  # 创建成功，退出整个函数
                                     else:
@@ -700,10 +700,12 @@ allow_writeable_chroot=YES
             volume_mount = f"-v {user_data_dir}:/workspace"
             port_mapping = f"-p {host_port}:{container_port}"
             
+            # 使用 tail -f /dev/null 保持容器运行
             docker_cmd = (
                 f"docker run -d --name {container_name} "
                 f"{gpu_args} {volume_mount} {port_mapping} "
-                f"{image_name}"
+                f"{image_name} "
+                f"tail -f /dev/null"  # 使用 tail -f /dev/null 保持容器运行
             )
             
             print("\n即将执行的命令：")
@@ -727,7 +729,8 @@ allow_writeable_chroot=YES
                     docker_cmd = (
                         f"docker run -d --name {container_name} "
                         f"{gpu_args} {volume_mount} {port_mapping} "
-                        f"{image_name}"
+                        f"{image_name} "
+                        f"tail -f /dev/null"
                     )
                     print("\n使用新的命令重试：")
                     print(docker_cmd)

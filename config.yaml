@@ -66,13 +66,28 @@ task_records:
     - '4'
     server: server1
     timestamp: 1731735197
+  - container: lanzetian-server1-1731736231
+    gpus:
+    - '4'
+    server: server1
+    timestamp: 1731736233
+  - container: lanzetian-server1-1731736695
+    gpus:
+    - '4'
+    server: server1
+    timestamp: 1731736698
+  - container: lanzetian-server1-1731737149
+    gpus:
+    - '5'
+    server: server1
+    timestamp: 1731737154
 tasks:
   task_records: {}
   user_limits:
     default:
       max_containers: 5
       max_gpus: 4
-      time_limit: 168
+      time_limit: 1
 users:
   admin:
     data_dir: ''
