@@ -199,7 +199,7 @@ class ContainerTimeChecker:
                 self.config['email_settings']['sender_password']
             )
             
-            # 发送���件
+            # 发送邮件
             server.send_message(msg)
             server.quit()
             
@@ -274,11 +274,9 @@ class ContainerTimeChecker:
             
             for container in containers:
                 user = container['user']
-                # 获取用户的时间限制
-                time_limit = self.config['tasks']['user_limits'].get(
-                    user, 
-                    self.config['tasks']['user_limits']['default']
-                )['time_limit']
+                # 获取用户组的时间限制
+                user_group = self.config['users'][user].get('group', 'default')
+                time_limit = self.config['user_groups'][user_group]['time_limit']
                 
                 running_hours = container['running_hours']
                 

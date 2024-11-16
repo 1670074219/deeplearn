@@ -77,20 +77,36 @@ task_records:
     - '2'
     server: server1
     timestamp: 1731758210
-tasks:
-  task_records: {}
-  user_limits:
-    default:
-      max_containers: 5
-      max_gpus: 4
-      time_limit: 1
+user_groups:
+  admin_group:
+    name: "管理员组"
+    description: "管理员用户组"
+    allowed_servers: ["server1", "server2", "server3", "server4", "server5", "server6"]
+    max_containers: 10
+    max_gpus: 8
+    time_limit: 336  # 小时
+  default:
+    name: "默认组"
+    description: "默认用户组"
+    allowed_servers: ["server1", "server2", "server3", "server4", "server5", "server6"]
+    max_containers: 5
+    max_gpus: 4
+    time_limit: 168
+  student_group:
+    name: "学生组"
+    description: "学生用户组"
+    allowed_servers: ["server1", "server2"]
+    max_containers: 3
+    max_gpus: 2
+    time_limit: 72
 users:
   admin:
-    data_dir: ''
-    email: 1670074219@qq.com
+    username: admin
     password: admin_password
     role: admin
-    username: admin
+    group: admin_group
+    email: 1670074219@qq.com
+    data_dir: ''
   lanzetian:
     data_dir: /nfs/data/lanzetian
     email: 3439986898@qq.com
@@ -98,8 +114,9 @@ users:
     role: user
     username: lanzetian
   user1:
-    data_dir: /nfs/data/user1
-    email: 1670074219@qq.com
+    username: user1
     password: password1
     role: user
-    username: user1
+    group: student_group
+    email: 1670074219@qq.com
+    data_dir: /nfs/data/user1

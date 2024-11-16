@@ -7,6 +7,7 @@ from config_manager import ConfigManager
 from ssh_manager import SSHManager
 from docker_manager import DockerManager
 from log_manager import LogManager
+from group_manager import GroupManager
 
 class LabServer:
     def __init__(self):
@@ -18,6 +19,7 @@ class LabServer:
         self.current_user = None
         self.cached_server_status = None
         self.user_manager = UserManager(self.config)
+        self.group_manager = GroupManager(self.config)
 
     def load_config(self):
         with open('config.yaml', 'r', encoding='utf-8') as f:
@@ -146,7 +148,7 @@ class LabServer:
         try:
             print(f"正在从 {registry_info['name']} 拉取镜像 {image_name}...")
             
-            # 根据不同的仓库构建不同的镜像名称和命令
+            # 根不同的仓库构建不同的镜像名称和命令
             if registry_info['url'] == 'docker.io':
                 # Docker Hub镜像保持原始名称
                 full_image_name = image_name
@@ -183,7 +185,7 @@ class LabServer:
 
             # 在远程服务器上拉取镜像
             print(f"开始在远程服务器上拉取镜像：{full_image_name}")
-            print(f"执行命令：{pull_cmd}")
+            print(f"执���命令：{pull_cmd}")
             
             stdin, stdout, stderr = ssh.exec_command(pull_cmd)
             
@@ -474,10 +476,23 @@ allow_writeable_chroot=YES
                     print("错误：无效的服务序号")
                     continue
 
-                # 服务器选择成功，建立SSH连接
+                # 服务器选择成功，建立SSH连
                 server_info = self.cached_server_status[server_choice]
                 server_name = server_info['name']
                 server = self.config['servers'][server_name]
+                
+                # 检查用户是否有权限访问选择的服务器
+                user_group = self.config['users'][self.current_user].get('group', 'default')
+                group_info = self.config['user_groups'][user_group]
+                if server_name not in group_info['allowed_servers']:
+                    print(f"您所在的用户组（{group_info['name']}）没有权限访问该服务器")
+                    return False
+                
+                # 检查用户的容器数量限制
+                current_containers = len(self.get_user_tasks(self.current_user))
+                if current_containers >= group_info['max_containers']:
+                    print(f"您已达到容器数量限制（最大{group_info['max_containers']}个）")
+                    return False
                 
                 # 连接服务器
                 ssh = paramiko.SSHClient()
@@ -515,7 +530,7 @@ allow_writeable_chroot=YES
                         if choice == '0':
                             break  # 返回服务器选择
                         
-                        if choice == '1':  # 使用本地镜像
+                        if choice == '1':  # 使用本��镜像
                             print("\n请选择本地镜像编号（0返回上一步）:")
                             choice = input().strip()
                             if choice == '0':
@@ -607,7 +622,7 @@ allow_writeable_chroot=YES
             if gpu_choice == '0':
                 return False
 
-            # 验证GPU���择
+            # 验证GPU择
             selected_gpus = [g.strip() for g in gpu_choice.split(',')]
             
             # 检查输入的GPU是否有效
@@ -617,12 +632,10 @@ allow_writeable_chroot=YES
                     return False
             
             # 检查用户GPU使用限制
-            user_limits = self.config['tasks']['user_limits'].get(
-                self.current_user,
-                self.config['tasks']['user_limits']['default']
-            )
-            if len(selected_gpus) > user_limits['max_gpus']:
-                print(f"超出GPU使用限制（最大{user_limits['max_gpus']}个）")
+            user_group = self.config['users'][self.current_user].get('group', 'default')
+            group_info = self.config['user_groups'][user_group]
+            if len(selected_gpus) > group_info['max_gpus']:
+                print(f"超出GPU使用限制（您所在的用户组 {group_info['name']} 最大可使用 {group_info['max_gpus']} 个GPU）")
                 return False
 
             # 获取端口映射
@@ -825,10 +838,21 @@ allow_writeable_chroot=YES
             return []
 
     def show_user_info(self):
-        """显用户信息和任务"""
+        """显示用户信息和任务"""
         print(f"\n=== 用户信息 ===")
         print(f"用户名: {self.current_user}")
         print(f"角色: {self.config['users'][self.current_user]['role']}")
+        
+        # 显示用户组信息
+        user_group = self.config['users'][self.current_user].get('group', 'default')
+        group_info = self.config['user_groups'][user_group]
+        print(f"\n用户组信息：")
+        print(f"组名：{group_info['name']}")
+        print(f"描述：{group_info['description']}")
+        print(f"可用服务器：{', '.join(group_info['allowed_servers'])}")
+        print(f"最大容器数：{group_info['max_containers']}")
+        print(f"最大GPU数：{group_info['max_gpus']}")
+        print(f"时间限制：{group_info['time_limit']}小时")
         
         # 显示FTP信息
         registry_server = self.config['registry_server']
@@ -839,17 +863,7 @@ allow_writeable_chroot=YES
         print(f"密码：与系统登录密码相同")
         print(f"目录：{self.config['users'][self.current_user].get('data_dir', '未创建')}")
         
-        # 显示用户限制信息
-        user_limits = self.config['tasks']['user_limits'].get(
-            self.current_user,
-            self.config['tasks']['user_limits']['default']
-        )
-        print(f"\n使用限制：")
-        print(f"最大容器数：{user_limits['max_containers']}")
-        print(f"最大GPU数：{user_limits['max_gpus']}")
-        print(f"时间限制：{user_limits['time_limit']}小时")
-        
-        # 显示正在运行的任
+        # 显示正在运行的任务
         print("\n正在运行的任务：")
         tasks = self.get_user_tasks(self.current_user)
         if tasks:
@@ -910,54 +924,86 @@ allow_writeable_chroot=YES
         else:
             print("暂无运行中的任务")
 
-    def manage_user_limits(self):
-        """管理用使用限制"""
+    def manage_groups(self):
+        """管理用户组"""
         if not self.user_manager.is_admin(self.current_user):
             print("权限不足")
             return
-        
+
         while True:
-            print("\n=== 管理用户限制 ===")
-            print("1. 查看所有用户限制")
-            print("2. 设置用户限制")
-            print("3. 返回")
-            
+            print("\n=== 用户组管理 ===")
+            print("1. 查看所有用户组")
+            print("2. 创建用户组")
+            print("3. 修改用户组")
+            print("4. 删除用户组")
+            print("5. 返回")
+
             choice = input("请选择操作: ")
-            
+
             if choice == '1':
-                print("\n当前用户限制：")
-                for username in self.config['users']:
-                    limits = self.config['tasks']['user_limits'].get(
-                        username,
-                        self.config['tasks']['user_limits']['default']
-                    )
-                    print(f"\n用户: {username}")
-                    print(f"最大容器数: {limits['max_containers']}")
-                    print(f"最大GPU数: {limits['max_gpus']}")
-                    print(f"时间限制: {limits['time_limit']}小时")
-            
+                groups = self.group_manager.list_groups()
+                print("\n当前用户组：")
+                for group_name, group_info in groups.items():
+                    print(f"\n组名：{group_name}")
+                    print(f"描述：{group_info['description']}")
+                    print(f"可用服务器：{', '.join(group_info['allowed_servers'])}")
+                    print(f"最大容器数：{group_info['max_containers']}")
+                    print(f"最大GPU数：{group_info['max_gpus']}")
+                    print(f"时间限制：{group_info['time_limit']}小时")
+
             elif choice == '2':
-                username = input("请输入用户名: ")
-                if username not in self.config['users']:
-                    print("用户不存在")
-                    continue
-                
-                try:
-                    max_containers = int(input("请输入最大容器数: "))
-                    max_gpus = int(input("请输入最大GPU数: "))
-                    time_limit = int(input("请输入时间限制(小时): "))
-                    
-                    self.config['tasks']['user_limits'][username] = {
-                        'max_containers': max_containers,
-                        'max_gpus': max_gpus,
-                        'time_limit': time_limit
-                    }
+                group_name = input("请输入新用户组名称: ")
+                description = input("请输入用户组描述: ")
+                print("\n可用服务器（用逗号分隔）:")
+                for server in self.config['servers'].keys():
+                    print(f"- {server}")
+                allowed_servers = input("请选择允许使用的服务器: ").split(',')
+                max_containers = int(input("请输入最大容器数: "))
+                max_gpus = int(input("请输入最大GPU数: "))
+                time_limit = int(input("请输入时间限制(小时): "))
+
+                if self.group_manager.create_group(
+                    group_name, description, allowed_servers,
+                    max_containers, max_gpus, time_limit
+                ):
+                    print("用户组创建成功！")
                     self._save_config()
-                    print("设置成功！")
-                except ValueError:
-                    print("输入无效，请输入数字")
-            
+
             elif choice == '3':
+                group_name = input("请输入要修改的用户组名称: ")
+                if group_name in self.config['user_groups']:
+                    print("\n当前设置：")
+                    group_info = self.group_manager.get_group_info(group_name)
+                    print(f"描述：{group_info['description']}")
+                    print(f"可用服务器：{', '.join(group_info['allowed_servers'])}")
+                    print(f"最大容器数：{group_info['max_containers']}")
+                    print(f"最大GPU数：{group_info['max_gpus']}")
+                    print(f"时间限制：{group_info['time_limit']}小时")
+
+                    description = input("\n请输入新的描述（直接回车保持不变）: ")
+                    allowed_servers = input("请输入新的服务器列表（逗号分隔，直接回车保持不变）: ")
+                    max_containers = input("请输入新的最大容器数（直接回车保持不变）: ")
+                    max_gpus = input("请输入新的最大GPU数（直接回车保持不变）: ")
+                    time_limit = input("请输入新的时限制（直接回车保持不变）: ")
+
+                    if self.group_manager.modify_group(
+                        group_name,
+                        description if description else None,
+                        allowed_servers.split(',') if allowed_servers else None,
+                        int(max_containers) if max_containers else None,
+                        int(max_gpus) if max_gpus else None,
+                        int(time_limit) if time_limit else None
+                    ):
+                        print("用户组修改成功！")
+                        self._save_config()
+
+            elif choice == '4':
+                group_name = input("请输入要删除的用户组名称: ")
+                if self.group_manager.delete_group(group_name):
+                    print("用户组删除成功！")
+                    self._save_config()
+
+            elif choice == '5':
                 break
 
     def show_menu(self):
@@ -978,8 +1024,8 @@ allow_writeable_chroot=YES
             if self.current_user and self.user_manager.is_admin(self.current_user):
                 print("6. 用户管理")
                 print("7. 查看所有任务")
-                print("8. 管理用户限制")
-                print("9. 停止任何用户的任务")
+                print("8. 停止任何用户的任务")
+                print("9. 用户组管理")
 
             choice = input("请选择操作: ")
 
@@ -992,16 +1038,16 @@ allow_writeable_chroot=YES
             elif choice == '4':
                 self.stop_user_task()
             elif choice == '5':
-                print("感谢使用，再！")
+                print("感谢使用，再见！")
                 break
             elif choice == '6' and self.user_manager.is_admin(self.current_user):
                 self.user_manager.manage_users()
             elif choice == '7' and self.user_manager.is_admin(self.current_user):
                 self.show_all_tasks()
             elif choice == '8' and self.user_manager.is_admin(self.current_user):
-                self.manage_user_limits()
-            elif choice == '9' and self.user_manager.is_admin(self.current_user):
                 self.stop_any_task()
+            elif choice == '9' and self.user_manager.is_admin(self.current_user):
+                self.manage_groups()
             else:
                 print("无效的选择，请重试")
 
@@ -1189,7 +1235,7 @@ allow_writeable_chroot=YES
                         task['running_time']
                     ))
                 
-                print("\n请选择要停止的任务序号（多个任务用逗号分隔，如：1,2,3）")
+                print("\n请选择要停止的任务序��（多个任务用逗号分隔，如：1,2,3）")
                 print("输入 'all' 停止所有任务")
                 print("输入 '0' 返回")
                 choice = input().strip().lower()
