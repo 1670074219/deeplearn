@@ -52,6 +52,20 @@ servers:
     password: siton@2024
     port: 22
     username: root
+task_records:
+  lanzetian:
+  - container: lanzetian-server2-1731734712
+    gpus:
+    - '3'
+    - '4'
+    - '5'
+    server: server2
+    timestamp: 1731734732
+  - container: lanzetian-server1-1731735186
+    gpus:
+    - '4'
+    server: server1
+    timestamp: 1731735197
 tasks:
   task_records: {}
   user_limits:

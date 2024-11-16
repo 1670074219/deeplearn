@@ -1,6 +1,7 @@
 import yaml
 import paramiko
 import getpass
+import time
 from user_manager import UserManager
 
 class LabServer:
@@ -29,7 +30,7 @@ class LabServer:
                 # 尝试最多3次密码输入
                 for attempt in range(3):
                     password = getpass.getpass("请输入密码: ")
-                    if password == '0':  # 允许用户输入0回用户名输入
+                    if password == '0':  # 允许户输入0回用户名入
                         break
                     
                     # 检查密码是否正确
@@ -191,7 +192,7 @@ class LabServer:
                     if "Client.Timeout exceeded" in error:
                         print("拉取超时，可能是网络问题。建议：")
                         print("1. 检查服务器网络连接")
-                        print("2. 尝试使用其他镜像源")
+                        print("2. 尝试使用其他��像源")
                         print("3. 如果可能，考虑使用私有仓库")
                     print(f"拉取镜像失败：{error}")
                     return False
@@ -213,7 +214,7 @@ class LabServer:
             return False
 
     def get_registry_images(self, ssh):
-        """获取仓库服务器上的镜像列表"""
+        """取仓库服务器上的镜像列表"""
         try:
             # 先连接到仓库服务器
             registry_ssh = paramiko.SSHClient()
@@ -243,7 +244,7 @@ class LabServer:
                 return []
 
             # 获取仓库中的镜像列表（包含大小信息）
-            print("正在获取镜像列表...")
+            print("正在获镜像列表...")
             cmd = "docker images --format '{{.Repository}}:{{.Tag}}\t{{.Size}}'"
             stdin, stdout, stderr = registry_ssh.exec_command(cmd)
             output = stdout.read().decode()
@@ -273,7 +274,7 @@ class LabServer:
             return images
             
         except Exception as e:
-            print(f"获取仓库镜像列表时出错：{str(e)}")
+            print(f"获取库镜像列表时出错：{str(e)}")
             return []
         finally:
             try:
@@ -305,14 +306,14 @@ class LabServer:
             if stdout.read().decode().strip() == 'exists':
                 print(f"用户目录已存在：{user_dir}")
             else:
-                # 创建目录并设置权限
+                # 创建目录并
                 cmd = f"sudo mkdir -p {user_dir} && sudo chmod 755 {user_dir}"
                 print(f"正在创建用户数据目录：{user_dir}")
                 stdin, stdout, stderr = registry_ssh.exec_command(cmd)
                 error = stderr.read().decode()
                 
                 if error:
-                    print(f"创建用户数据目录失败：{error}")
+                    print(f"创用户数据目录失：{error}")
                     return None
 
             # 创建虚拟用户配置
@@ -412,151 +413,367 @@ allow_writeable_chroot=YES
             ))
 
     def create_dl_task(self):
-        if not self.current_user:
-            print("请先登录")
-            return
-
-        while True:  # 服务器选择循环
-            if self.cached_server_status is None:
-                print("正在获取服务器信息...")
-                self.cached_server_status = self.get_all_servers_status()
-            
-            print("\n可用的服务器：")
-            self.display_server_status(self.cached_server_status)
-            
-            print("\n选项：")
-            print("0. 返回主菜单")
-            print("r. 刷新服务器信息")
-            server_choice = input("请选择服务器序号: ").strip().lower()
-            
-            if server_choice == '0':
-                return
-            elif server_choice == 'r':
-                print("正在刷新服务器信息...")
-                self.cached_server_status = self.get_all_servers_status()
-                continue
-            
-            if server_choice not in self.cached_server_status:
-                print("错误：无效的服务器序号")
-                continue
-
-            # 服务器选择成功，进入镜像选择流程
-            while True:  # 镜像选择循环
+        ssh_connections = {}
+        try:
+            # 在创建任务前检查用户数据目录
+            user_data_dir = self.config['users'][self.current_user].get('data_dir')
+            if not user_data_dir:
+                print("正在为用户创建数据目录...")
+                registry_ssh = None
                 try:
-                    server_info = self.cached_server_status[server_choice]
-                    server_name = server_info['name']
-                    server = self.config['servers'][server_name]
-                    
-                    # 显示GPU信息
-                    print(f"\n服务器 {server_name} 的GPU详细信息：")
-                    # ... (GPU信息显示代码保持不变)
-
-                    # 连接服务器
-                    ssh = paramiko.SSHClient()
-                    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-                    ssh.connect(
-                        hostname=server['host'],
-                        port=server['port'],
-                        username=server['username'],
-                        password=server['password']
+                    registry_ssh = paramiko.SSHClient()
+                    registry_ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+                    registry_server = self.config['registry_server']
+                    registry_ssh.connect(
+                        hostname=registry_server['host'],
+                        port=registry_server['port'],
+                        username=registry_server['username'],
+                        password=registry_server['password']
                     )
-
-                    # 获取本地镜像列表
-                    print("\n获取本地Docker镜像列表...")
-                    local_images = self.get_server_docker_images(ssh)
-                    
-                    print("\n本地可用的Docker镜像：")
-                    for idx, image in enumerate(local_images, 1):
-                        print(f"{idx}. {image['name']} [本地] ({image['size']})")
-                    
-                    print("\n选项：")
-                    print("1. 使用本地镜像")
-                    print("2. 使用远程仓库镜像")
-                    print("0. 返回服务器选择")
-                    
-                    choice = input("请选择: ").strip()
-                    
-                    if choice == '0':
-                        ssh.close()
-                        break  # 返回服务器选择
-                    
-                    if choice == '1':  # 使用本地镜像
-                        while True:
-                            print("\n请选择本地镜像编号（0返回上一步）:")
-                            choice = input().strip()
-                            if choice == '0':
-                                break
-                            try:
-                                idx = int(choice) - 1
-                                if 0 <= idx < len(local_images):
-                                    image_name = local_images[idx]['name']
-                                    # 进入容器创建流程
-                                    if self.create_container(ssh, server_name, image_name):
-                                        return  # 创建成功，退出整个函数
-                                else:
-                                    print("无效的选择，请重试")
-                            except ValueError:
-                                print("请输入有效的数字")
-                    
-                    elif choice == '2':  # 使用远程仓库镜像
-                        print("\n获取远程仓库镜像列表...")
-                        registry_images = self.get_registry_images(ssh)
-                        
-                        while True:
-                            print("\n远程仓库可用的Docker镜像：")
-                            for idx, image in enumerate(registry_images, 1):
-                                is_local = any(local_img['name'] == image['name'] for local_img in local_images)
-                                status = "[本地已存在]" if is_local else "[远程仓库]"
-                                print(f"{idx}. {image['name']} {status} (大小: {image['size']})")
-                            
-                            print("\n请选择镜像编号（0返回上一步）:")
-                            choice = input().strip()
-                            if choice == '0':
-                                break
-                            
-                            try:
-                                idx = int(choice) - 1
-                                if 0 <= idx < len(registry_images):
-                                    image_name = registry_images[idx]['name']
-                                    # 检查是否需要拉取
-                                    if not any(local_img['name'] == image_name for local_img in local_images):
-                                        if not self.pull_docker_image(ssh, image_name, self.config['docker_registries'][0]):
-                                            continue
-                                    # 进入容器创建流程
-                                    if self.create_container(ssh, server_name, image_name):
-                                        return  # 创建成功，退出整个函数
-                                else:
-                                    print("无效的选择，请重试")
-                            except ValueError:
-                                print("请输入有效的数字")
-                
-                except Exception as e:
-                    print(f"操作失败：{str(e)}")
+                    user_data_dir = self.create_user_data_dir(registry_ssh, self.current_user)
+                    if not user_data_dir:
+                        print("无法创建用户数据目录，请联系管理员")
+                        return
                 finally:
+                    if registry_ssh:
+                        registry_ssh.close()
+
+            if not self.current_user:
+                print("请先登录")
+                return
+
+            while True:  # 服务器选循环
+                if self.cached_server_status is None:
+                    print("正在获取服务器信息...")
+                    self.cached_server_status = self.get_all_servers_status()
+                
+                print("\n可用的服务器：")
+                self.display_server_status(self.cached_server_status)
+                
+                print("\n选项：")
+                print("0. 返回主菜单")
+                print("r. 刷新服务器信息")
+                server_choice = input("请选择服务器序号: ").strip().lower()
+                
+                if server_choice == '0':
+                    return
+                elif server_choice == 'r':
+                    print("正在刷新服务器信息...")
+                    self.cached_server_status = self.get_all_servers_status()
+                    continue
+                
+                if server_choice not in self.cached_server_status:
+                    print("错误：无效的服务器号")
+                    continue
+
+                # 服务器选择成功，进入镜像选择流程
+                while True:  # 镜像选择循环
                     try:
-                        ssh.close()
-                    except:
-                        pass
+                        server_info = self.cached_server_status[server_choice]
+                        server_name = server_info['name']
+                        server = self.config['servers'][server_name]
+                        
+                        # 显示GPU信息
+                        print(f"\n服务器 {server_name} 的GPU详细信息")
+                        # ... (GPU信息显示代码保持不变)
+
+                        # 连接服务器
+                        ssh = paramiko.SSHClient()
+                        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+                        ssh.connect(
+                            hostname=server['host'],
+                            port=server['port'],
+                            username=server['username'],
+                            password=server['password']
+                        )
+                        ssh_connections[server_name] = ssh
+
+                        # 获取本地镜像列表
+                        print("\n获取本地Docker镜像列表...")
+                        local_images = self.get_server_docker_images(ssh)
+                        
+                        print("\n本地可用的Docker镜像：")
+                        for idx, image in enumerate(local_images, 1):
+                            print(f"{idx}. {image['name']} [本地] ({image['size']})")
+                        
+                        print("\n选项：")
+                        print("1. 使用本地镜像")
+                        print("2. 使用远程仓库镜像")
+                        print("0. 返回服务器选择")
+                        
+                        choice = input("请选择: ").strip()
+                        
+                        if choice == '0':
+                            ssh.close()
+                            break  # 返回服务器选择
+                        
+                        if choice == '1':  # 使用本地镜像
+                            while True:
+                                print("\n请选择本地镜像编号（0回上一步）:")
+                                choice = input().strip()
+                                if choice == '0':
+                                    break
+                                try:
+                                    idx = int(choice) - 1
+                                    if 0 <= idx < len(local_images):
+                                        image_name = local_images[idx]['name']
+                                        # 进入容器创建流程
+                                        if self.create_container(ssh, server_name, image_name):
+                                            return  # 创建成功，退出整个函数
+                                    else:
+                                        print("无效的选择，请重试")
+                                except ValueError:
+                                    print("请输入有效的数字")
+                        
+                        elif choice == '2':  # 使用远程仓库镜像
+                            print("\n获取远程仓库镜像列表...")
+                            registry_images = self.get_registry_images(ssh)
+                            
+                            while True:
+                                print("\n远程仓库可用的Docker镜像：")
+                                for idx, image in enumerate(registry_images, 1):
+                                    is_local = any(local_img['name'] == image['name'] for local_img in local_images)
+                                    status = "[本地已存在]" if is_local else "[远程仓库]"
+                                    print(f"{idx}. {image['name']} {status} (大小: {image['size']})")
+                                
+                                print("\n请选择镜像编号（0返回上一步）:")
+                                choice = input().strip()
+                                if choice == '0':
+                                    break
+                                
+                                try:
+                                    idx = int(choice) - 1
+                                    if 0 <= idx < len(registry_images):
+                                        image_name = registry_images[idx]['name']
+                                        # 检查是否需要拉取
+                                        if not any(local_img['name'] == image_name for local_img in local_images):
+                                            if not self.pull_docker_image(ssh, image_name, self.config['docker_registries'][0]):
+                                                continue
+                                        # 进入容器��建流程
+                                        if self.create_container(ssh, server_name, image_name):
+                                            return  # 创建成功，退出整个函数
+                                    else:
+                                        print("无效的选择，请重试")
+                                except ValueError:
+                                    print("请输入有效的数字")
+                    
+                    except Exception as e:
+                        print(f"操作失败：{str(e)}")
+                    finally:
+                        try:
+                            ssh.close()
+                        except:
+                            pass
+
+        finally:
+            # 确保关闭所有SSH连接
+            for ssh in ssh_connections.values():
+                try:
+                    ssh.close()
+                except:
+                    pass
 
     def create_container(self, ssh, server_name, image_name):
         """创建容器的具体流程"""
         try:
-            # 获取GPU数量
-            print("\n请输入要使用的GPU数量（0返回上一步）:")
-            gpu_num = input().strip()
-            if gpu_num == '0':
+            # 获取可用的GPU
+            gpu_info = self.check_gpu_status(server_name)
+            if not gpu_info:
+                print("无法获取GPU信息")
                 return False
             
+            # 显示所有GPU信息供用户选择
+            print("\n可用的GPU列表：")
+            print(f"{'序号':<5} {'GPU型号':<30} {'显存使用':<20} {'使用率':<10}")
+            print("-" * 65)
+            available_gpus = []
+            for gpu in gpu_info:
+                usage = f"{gpu['used_memory']:.0f}/{gpu['total_memory']:.0f}MB"
+                status = "空闲" if gpu['utilization'] < 5 else f"使用率{gpu['utilization']:.0f}%"
+                print(f"{gpu['index']:<5} {gpu['name']:<30} {usage:<20} {status:<10}")
+                if gpu['utilization'] < 5:
+                    available_gpus.append(str(gpu['index']))
+
+            if not available_gpus:
+                print("\n当前没有可用的GPU")
+                return False
+
+            # 让用户选择GPU
+            print("\n请输入要使用的GPU编号（多个GPU用逗号分隔，如：0,1,2）（输入0返回上一步）:")
+            gpu_choice = input().strip()
+            if gpu_choice == '0':
+                return False
+
+            # 验证GPU选择
+            selected_gpus = [g.strip() for g in gpu_choice.split(',')]
+            
+            # 检查输入的GPU是否有效
+            for gpu in selected_gpus:
+                if gpu not in [str(g['index']) for g in gpu_info]:
+                    print(f"无效的GPU编号：{gpu}")
+                    return False
+            
+            # 检查用户GPU使用限制
+            user_limits = self.config['tasks']['user_limits'].get(
+                self.current_user,
+                self.config['tasks']['user_limits']['default']
+            )
+            if len(selected_gpus) > user_limits['max_gpus']:
+                print(f"超出GPU使用限制（最大{user_limits['max_gpus']}个）")
+                return False
+
             # 获取端口映射
             print("\n请输入主机端口（0返回上一步）:")
             host_port = input().strip()
             if host_port == '0':
                 return False
             
-            # 创建容器
-            # ... (容器创建代码)
+            try:
+                host_port = int(host_port)
+                if host_port < 1024 or host_port > 65535:
+                    print("端口号必须在1024-65535之间")
+                    return False
+            except ValueError:
+                print("请输入有效的端口号")
+                return False
             
-            return True  # 创建成功
+            print("\n请输入容器内部端口（默认22，输入0返回上一步）:")
+            container_port = input().strip()
+            if container_port == '0':
+                return False
+            if not container_port:
+                container_port = '22'
+            
+            try:
+                container_port = int(container_port)
+                if container_port < 1 or container_port > 65535:
+                    print("端口号必须在1-65535之间")
+                    return False
+            except ValueError:
+                print("请输入有效的端口号")
+                return False
+            
+            # 检查端口是否已被使用
+            cmd = f"netstat -tln | grep ':{host_port}'"
+            stdin, stdout, stderr = ssh.exec_command(cmd)
+            if stdout.read():
+                print(f"端口 {host_port} 已被占用")
+                return False
+            
+            # 构建容器名称
+            container_name = f"{self.current_user}-{server_name}-{int(time.time())}"
+            
+            # 检查并处理同名容器
+            print(f"\n检查是否存在同名容器...")
+            check_cmd = f"docker ps -a --filter name={container_name} --format '{{{{.Names}}}}'"
+            stdin, stdout, stderr = ssh.exec_command(check_cmd)
+            if stdout.read():
+                print(f"发现同名容器存在")
+                print("选项：")
+                print("1. 删除已有容器并继续创建")
+                print("2. 取消创建")
+                choice = input("请选择操作 [1/2]: ").strip()
+                
+                if choice == '2':
+                    print("取消创建容器")
+                    return False
+                elif choice == '1':
+                    print(f"正在删除同名容器...")
+                    # 先尝试停止容器
+                    ssh.exec_command(f"docker stop {container_name}")
+                    # 然后删除容器
+                    ssh.exec_command(f"docker rm {container_name}")
+                    print("同名容器已清理")
+                else:
+                    print("无效的选择，取消创建")
+                    return False
+            
+            # 获取用户数据目录
+            user_data_dir = self.config['users'][self.current_user].get('data_dir')
+            if not user_data_dir:
+                print("用户数据目录未配置")
+                return False
+            
+            # 构建docker run命令
+            device_list = ','.join(selected_gpus)
+            gpu_args = f"--gpus '\"device={device_list}\"'"
+            volume_mount = f"-v {user_data_dir}:/workspace"
+            port_mapping = f"-p {host_port}:{container_port}"
+            
+            docker_cmd = (
+                f"docker run -d --name {container_name} "
+                f"{gpu_args} {volume_mount} {port_mapping} "
+                f"{image_name}"
+            )
+            
+            print("\n即将执行的命令：")
+            print(docker_cmd)
+            print("\n确认创建容器？(y/n)")
+            if input().lower() != 'y':
+                return False
+            
+            # 执行docker run命令
+            stdin, stdout, stderr = ssh.exec_command(docker_cmd)
+            output = stdout.read().decode()
+            error = stderr.read().decode()
+            
+            if error:
+                # 如果出现GPU相关错误，尝试使用替代语法
+                if "cannot set both Count and DeviceIDs on device request" in error:
+                    print("尝试使用替代GPU参数格式...")
+                    # 使用替代的GPU参数格式
+                    device_list = ','.join(selected_gpus)
+                    gpu_args = f"--gpus '\"device={device_list}\"'"
+                    docker_cmd = (
+                        f"docker run -d --name {container_name} "
+                        f"{gpu_args} {volume_mount} {port_mapping} "
+                        f"{image_name}"
+                    )
+                    print("\n使用新的命令重试：")
+                    print(docker_cmd)
+                    stdin, stdout, stderr = ssh.exec_command(docker_cmd)
+                    output = stdout.read().decode()
+                    error = stderr.read().decode()
+                
+                if error and "Error" in error:
+                    print(f"创建容器失败：{error}")
+                    return False
+            
+            # 验证容器是否成功创建和运行
+            verify_cmd = f"docker ps --filter name={container_name} --format '{{{{.Status}}}}'"
+            stdin, stdout, stderr = ssh.exec_command(verify_cmd)
+            status = stdout.read().decode().strip()
+            error = stderr.read().decode().strip()
+            
+            if error:
+                print(f"验证容器状态时出错：{error}")
+                return False
+            
+            if not status:
+                print("容器未在运行状态")
+                # 尝试获取容器创建失败的原因
+                error_cmd = f"docker logs {container_name} 2>&1 | tail -n 5"
+                stdin, stdout, stderr = ssh.exec_command(error_cmd)
+                error_logs = stdout.read().decode().strip()
+                if error_logs:
+                    print(f"容器日志显示：\n{error_logs}")
+                return False
+            
+            if not status.startswith('Up'):
+                print(f"容器状态异常：{status}")
+                return False
+            
+            # 记录任务信息
+            self._record_task(server_name, container_name, selected_gpus)
+            
+            print(f"\n容器创建成功！")
+            print(f"容器名称：{container_name}")
+            print(f"使用GPU：{', '.join(selected_gpus)}")
+            print(f"端口映射：{host_port} -> {container_port}")
+            print(f"数据目录：{user_data_dir} -> /workspace")
+            
+            return True
+            
         except Exception as e:
             print(f"创建容器失败：{str(e)}")
             return False
@@ -612,9 +829,9 @@ allow_writeable_chroot=YES
         print(f"\nFTP信息：")
         print(f"服务器地址: {registry_server['host']}")
         print(f"端口: 21")
-        print(f"用户名: {self.current_user}")
-        print(f"密码: 与系统登录密码相同")
-        print(f"目录: {self.config['users'][self.current_user].get('data_dir', '未创建')}")
+        print(f"用户名：{self.current_user}")
+        print(f"密码：与系统登录密码相同")
+        print(f"目录：{self.config['users'][self.current_user].get('data_dir', '未创建')}")
         
         # 显示用户限制信息
         user_limits = self.config['tasks']['user_limits'].get(
@@ -622,9 +839,9 @@ allow_writeable_chroot=YES
             self.config['tasks']['user_limits']['default']
         )
         print(f"\n使用限制：")
-        print(f"最大容器数: {user_limits['max_containers']}")
-        print(f"最大GPU数: {user_limits['max_gpus']}")
-        print(f"时间限制: {user_limits['time_limit']}小时")
+        print(f"最大容器数：{user_limits['max_containers']}")
+        print(f"最大GPU数：{user_limits['max_gpus']}")
+        print(f"时间限制：{user_limits['time_limit']}小时")
         
         # 显示正在运行的任务
         print("\n正在运行的任务：")
@@ -749,12 +966,14 @@ allow_writeable_chroot=YES
             print("1. 创建深度学习任务")
             print("2. 用户信息")
             print("3. 修改密码")
-            print("4. 退出")
+            print("4. 停止任务")
+            print("5. 退出")
             
             if self.current_user and self.user_manager.is_admin(self.current_user):
-                print("5. 用户管理")
-                print("6. 查看所有任��")
-                print("7. 管理用户限制")
+                print("6. 用户管理")
+                print("7. 查看所有任务")
+                print("8. 管理用户限制")
+                print("9. 停止任何用户的任务")
 
             choice = input("请选择操作: ")
 
@@ -765,16 +984,291 @@ allow_writeable_chroot=YES
             elif choice == '3':
                 self.change_password()
             elif choice == '4':
+                self.stop_user_task()
+            elif choice == '5':
                 print("感谢使用，再见！")
                 break
-            elif choice == '5' and self.user_manager.is_admin(self.current_user):
-                self.user_manager.manage_users()
             elif choice == '6' and self.user_manager.is_admin(self.current_user):
-                self.show_all_tasks()
+                self.user_manager.manage_users()
             elif choice == '7' and self.user_manager.is_admin(self.current_user):
+                self.show_all_tasks()
+            elif choice == '8' and self.user_manager.is_admin(self.current_user):
                 self.manage_user_limits()
+            elif choice == '9' and self.user_manager.is_admin(self.current_user):
+                self.stop_any_task()
             else:
                 print("无效的选择，请重试")
+
+    def _record_task(self, server_name, container_name, gpu_indices):
+        """记录用户任务信息"""
+        if 'task_records' not in self.config:
+            self.config['task_records'] = {}
+        
+        if self.current_user not in self.config['task_records']:
+            self.config['task_records'][self.current_user] = []
+        
+        task_info = {
+            'server': server_name,
+            'container': container_name,
+            'gpus': gpu_indices,
+            'timestamp': int(time.time())
+        }
+        
+        self.config['task_records'][self.current_user].append(task_info)
+        self._save_config()
+
+    def stop_container(self, ssh, server_name, container_name):
+        """停止指定的容器"""
+        try:
+            print(f"\n正在停止容器 {container_name}...")
+            stop_cmd = f"docker stop {container_name}"
+            stdin, stdout, stderr = ssh.exec_command(stop_cmd)
+            error = stderr.read().decode()
+            if error:
+                print(f"停止容器失败：{error}")
+                return False
+            
+            print("正在删除容器...")
+            rm_cmd = f"docker rm {container_name}"
+            stdin, stdout, stderr = ssh.exec_command(rm_cmd)
+            error = stderr.read().decode()
+            if error:
+                print(f"删除容器失败：{error}")
+                return False
+            
+            print("容器已成功停止并删除")
+            return True
+        except Exception as e:
+            print(f"操作失败：{str(e)}")
+            return False
+
+    def stop_user_task(self):
+        """停止用户的任务"""
+        try:
+            tasks = self.get_user_tasks(self.current_user)
+            if not tasks:
+                print("当前没有运行中的任务")
+                return
+            
+            while True:
+                print("\n当前运行的任务：")
+                print("\n{:<5} {:<15} {:<20} {:<40} {:<15} {:<20}".format(
+                    "序号", "服务器", "容器ID", "容器名称", "状态", "运行时间"
+                ))
+                print("-" * 115)
+                
+                for idx, task in enumerate(tasks, 1):
+                    print("{:<5} {:<15} {:<20} {:<40} {:<15} {:<20}".format(
+                        idx,
+                        task['server'],
+                        task['container_id'],
+                        task['name'],
+                        task['status'],
+                        task['running_time']
+                    ))
+                
+                print("\n请选择要停止的任务序号（多个任务用逗号分隔，如：1,2,3）")
+                print("输入 'all' 停止所有任务")
+                print("输入 '0' 返回")
+                choice = input().strip().lower()
+                
+                if choice == '0':
+                    return
+                
+                selected_indices = []
+                if choice == 'all':
+                    selected_indices = list(range(len(tasks)))
+                else:
+                    try:
+                        # 解析用户输入的序号
+                        for num in choice.split(','):
+                            idx = int(num.strip()) - 1
+                            if 0 <= idx < len(tasks):
+                                selected_indices.append(idx)
+                            else:
+                                print(f"无效的序号：{idx + 1}")
+                                continue
+                    except ValueError:
+                        print("请输入有效的数字")
+                        continue
+                
+                if not selected_indices:
+                    print("未选择任何有效的任务")
+                    continue
+                
+                # 显示选中的任务
+                print("\n将要停止以下任务：")
+                for idx in selected_indices:
+                    task = tasks[idx]
+                    print(f"- {task['name']} (在 {task['server']} 上)")
+                
+                # 确认操作
+                print("\n确认要停止这些容器吗？(y/n)")
+                if input().lower() != 'y':
+                    print("操作已取消")
+                    continue
+                
+                # 按服务器分组任务，减少SSH连接次数
+                server_tasks = {}
+                for idx in selected_indices:
+                    task = tasks[idx]
+                    if task['server'] not in server_tasks:
+                        server_tasks[task['server']] = []
+                    server_tasks[task['server']].append(task)
+                
+                # 处理每个服务器上的任务
+                for server_name, server_tasks_list in server_tasks.items():
+                    try:
+                        # 连接到服务器
+                        server = self.config['servers'][server_name]
+                        ssh = paramiko.SSHClient()
+                        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+                        ssh.connect(
+                            hostname=server['host'],
+                            port=server['port'],
+                            username=server['username'],
+                            password=server['password']
+                        )
+                        
+                        # 停止该服务器上的所有选中容器
+                        for task in server_tasks_list:
+                            if self.stop_container(ssh, server_name, task['name']):
+                                print(f"成功停止容器：{task['name']}")
+                            else:
+                                print(f"停止容器失败：{task['name']}")
+                        
+                        ssh.close()
+                    except Exception as e:
+                        print(f"连接服务器 {server_name} 失败：{str(e)}")
+                
+                # 更新任务列表
+                tasks = self.get_user_tasks(self.current_user)
+                if not tasks:
+                    print("\n所有任务已停止")
+                    return
+                
+                print("\n是否继续停止其他任务？(y/n)")
+                if input().lower() != 'y':
+                    return
+                
+        except Exception as e:
+            print(f"操作失败：{str(e)}")
+
+    def stop_any_task(self):
+        """管理员停止任何用户的任务"""
+        if not self.user_manager.is_admin(self.current_user):
+            print("权限不足")
+            return
+        
+        try:
+            tasks = self.get_user_tasks()  # 获取所有任务
+            if not tasks:
+                print("当前没有运行中的任务")
+                return
+            
+            while True:
+                print("\n所有运行中的任务：")
+                print("\n{:<5} {:<15} {:<20} {:<40} {:<15} {:<20}".format(
+                    "序号", "服务器", "容器ID", "容器名称", "状态", "运行时间"
+                ))
+                print("-" * 115)
+                
+                for idx, task in enumerate(tasks, 1):
+                    print("{:<5} {:<15} {:<20} {:<40} {:<15} {:<20}".format(
+                        idx,
+                        task['server'],
+                        task['container_id'],
+                        task['name'],
+                        task['status'],
+                        task['running_time']
+                    ))
+                
+                print("\n请选择要停止的任务序号（多个任务用逗号分隔，如：1,2,3）")
+                print("输入 'all' 停止所有任务")
+                print("输入 '0' 返回")
+                choice = input().strip().lower()
+                
+                if choice == '0':
+                    return
+                
+                selected_indices = []
+                if choice == 'all':
+                    selected_indices = list(range(len(tasks)))
+                else:
+                    try:
+                        # 解析用户输入的序号
+                        for num in choice.split(','):
+                            idx = int(num.strip()) - 1
+                            if 0 <= idx < len(tasks):
+                                selected_indices.append(idx)
+                            else:
+                                print(f"无效的序号：{idx + 1}")
+                                continue
+                    except ValueError:
+                        print("请输入有效的数字")
+                        continue
+                
+                if not selected_indices:
+                    print("未选择任何有效的任务")
+                    continue
+                
+                # 显示选中的任务
+                print("\n将要停止以下任务：")
+                for idx in selected_indices:
+                    task = tasks[idx]
+                    print(f"- {task['name']} (在 {task['server']} 上)")
+                
+                # 确认操作
+                print("\n确认要停止这些容器吗？(y/n)")
+                if input().lower() != 'y':
+                    print("操作已取消")
+                    continue
+                
+                # 按服务器分组任务，减少SSH连接次数
+                server_tasks = {}
+                for idx in selected_indices:
+                    task = tasks[idx]
+                    if task['server'] not in server_tasks:
+                        server_tasks[task['server']] = []
+                    server_tasks[task['server']].append(task)
+                
+                # 处理每个服务器上的任务
+                for server_name, server_tasks_list in server_tasks.items():
+                    try:
+                        # 连接到服务器
+                        server = self.config['servers'][server_name]
+                        ssh = paramiko.SSHClient()
+                        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+                        ssh.connect(
+                            hostname=server['host'],
+                            port=server['port'],
+                            username=server['username'],
+                            password=server['password']
+                        )
+                        
+                        # 停止该服务器上的所有选中容器
+                        for task in server_tasks_list:
+                            if self.stop_container(ssh, server_name, task['name']):
+                                print(f"成功停止容器：{task['name']}")
+                            else:
+                                print(f"停止容器失败：{task['name']}")
+                        
+                        ssh.close()
+                    except Exception as e:
+                        print(f"连接服务器 {server_name} 失败：{str(e)}")
+                
+                # 更新任务列表
+                tasks = self.get_user_tasks()
+                if not tasks:
+                    print("\n所有任务已停止")
+                    return
+                
+                print("\n是否继续停止其他任务？(y/n)")
+                if input().lower() != 'y':
+                    return
+                
+        except Exception as e:
+            print(f"操作失败：{str(e)}")
 
 if __name__ == "__main__":
     server = LabServer()
