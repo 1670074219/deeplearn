@@ -1,4 +1,3 @@
-fcntl-linux
-threading
 paramiko
 pyyaml
+flask
