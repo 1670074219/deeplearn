@@ -18,6 +18,19 @@ email_settings:
   sender_password: yrcozxxcygqdbjjd
   smtp_port: 587
   smtp_server: smtp.qq.com
+gpu_usage:
+  server1:
+    '0': lanzetian
+    '1': lanzetian
+    '2': user1
+    '4': lanzetian
+    '5': lanzetian
+  server2:
+    '3': lanzetian
+  server3: {}
+  server4: {}
+  server5: {}
+  server6: {}
 notification_settings:
   warning_threshold: 0.8
 registry_server:
@@ -71,6 +84,18 @@ task_records:
     - '0'
     server: server1
     timestamp: 1731757719
+  - container: lanzetian-server1-1731760150
+    gpus:
+    - '1'
+    - '2'
+    server: server1
+    timestamp: 1731760152
+  - container: lanzetian-server1-1731760697
+    gpus:
+    - '4'
+    - '5'
+    server: server1
+    timestamp: 1731760760
   user1:
   - container: user1-server1-1731758194
     gpus:
@@ -79,34 +104,48 @@ task_records:
     timestamp: 1731758210
 user_groups:
   admin_group:
-    name: "管理员组"
-    description: "管理员用户组"
-    allowed_servers: ["server1", "server2", "server3", "server4", "server5", "server6"]
+    allowed_servers:
+    - server1
+    - server2
+    - server3
+    - server4
+    - server5
+    - server6
+    description: 管理员用户组
     max_containers: 10
     max_gpus: 8
-    time_limit: 336  # 小时
+    name: 管理员组
+    time_limit: 336
   default:
-    name: "默认组"
-    description: "默认用户组"
-    allowed_servers: ["server1", "server2", "server3", "server4", "server5", "server6"]
+    allowed_servers:
+    - server1
+    - server2
+    - server3
+    - server4
+    - server5
+    - server6
+    description: 默认用户组
     max_containers: 5
     max_gpus: 4
+    name: 默认组
     time_limit: 168
   student_group:
-    name: "学生组"
-    description: "学生用户组"
-    allowed_servers: ["server1", "server2"]
+    allowed_servers:
+    - server1
+    - server2
+    description: 学生用户组
     max_containers: 3
     max_gpus: 2
+    name: 学生组
     time_limit: 72
 users:
   admin:
-    username: admin
+    data_dir: /nfs/data/admin
+    email: 1670074219@qq.com
+    group: admin_group
     password: admin_password
     role: admin
-    group: admin_group
-    email: 1670074219@qq.com
-    data_dir: ''
+    username: admin
   lanzetian:
     data_dir: /nfs/data/lanzetian
     email: 3439986898@qq.com
@@ -114,9 +153,9 @@ users:
     role: user
     username: lanzetian
   user1:
-    username: user1
+    data_dir: /nfs/data/user1
+    email: 1670074219@qq.com
+    group: student_group
     password: password1
     role: user
-    group: student_group
-    email: 1670074219@qq.com
-    data_dir: /nfs/data/user1
+    username: user1
