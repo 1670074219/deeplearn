@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from log_manager import LogManager
 
 class ContainerTimeChecker:
     def __init__(self):
@@ -198,7 +199,7 @@ class ContainerTimeChecker:
                 self.config['email_settings']['sender_password']
             )
             
-            # 发送邮件
+            # 发送���件
             server.send_message(msg)
             server.quit()
             
@@ -208,10 +209,61 @@ class ContainerTimeChecker:
             print(f"发送邮件失败：{str(e)}")
             return False
 
+    def clean_task_records(self):
+        """清理不存在的容器记录"""
+        try:
+            if 'task_records' not in self.config:
+                return
+            
+            # 获取所有正在运行的容器名称
+            running_containers = set()
+            for server_name in self.config['servers']:
+                ssh = self.connect_to_server(server_name)
+                if not ssh:
+                    continue
+                
+                cmd = "docker ps --format '{{.Names}}'"
+                stdin, stdout, stderr = ssh.exec_command(cmd)
+                containers = stdout.read().decode().strip().split('\n')
+                running_containers.update(containers)
+            
+            # 清理每个用户的任务记录
+            cleaned = False
+            for username in list(self.config['task_records'].keys()):
+                if not self.config['task_records'][username]:
+                    continue
+                
+                # 过滤出仍在运行的容器记录
+                valid_tasks = [
+                    task for task in self.config['task_records'][username]
+                    if task['container'] in running_containers
+                ]
+                
+                # 如果有记录被清理
+                if len(valid_tasks) != len(self.config['task_records'][username]):
+                    cleaned = True
+                    if valid_tasks:
+                        self.config['task_records'][username] = valid_tasks
+                    else:
+                        # 如果用户没有有效记录，删除整个用户记录
+                        del self.config['task_records'][username]
+            
+            # 如果有记录被清理，保存配置文件
+            if cleaned:
+                self._save_config()
+                print("已清理过期的任务记录")
+            
+        except Exception as e:
+            print(f"清理任务记录失败：{str(e)}")
+
     def check_and_stop_overtime_containers(self):
         """检查并停止超时的容器"""
         try:
             print(f"\n=== 开始检查容器运行时间 ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')}) ===")
+            
+            # 先清理过期的任务记录
+            self.clean_task_records()
+            
             containers = self.get_container_info()
             
             if not containers:
@@ -304,6 +356,14 @@ class ContainerTimeChecker:
                     pass
 
 def main():
+    # 获取脚本所在目录
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    log_file = os.path.join(script_dir, 'container_check.log')
+    
+    # 创建日志管理器并进行轮转
+    log_manager = LogManager(log_file)
+    log_manager.rotate_log()
+    
     checker = ContainerTimeChecker()
     if checker.config is None:
         print("无法加载配置文件，程序退出")

@@ -13,6 +13,13 @@ docker_registries:
   username: admin
 - name: 公共仓库
   url: docker.io
+email_settings:
+  sender_email: 1670074219@qq.com
+  sender_password: yrcozxxcygqdbjjd
+  smtp_port: 587
+  smtp_server: smtp.qq.com
+notification_settings:
+  warning_threshold: 0.8
 registry_server:
   host: 219.216.101.242
   nfs_host: 219.216.101.242
@@ -54,38 +61,6 @@ servers:
     username: root
 task_records:
   lanzetian:
-  - container: lanzetian-server2-1731734712
-    gpus:
-    - '3'
-    - '4'
-    - '5'
-    server: server2
-    timestamp: 1731734732
-  - container: lanzetian-server1-1731735186
-    gpus:
-    - '4'
-    server: server1
-    timestamp: 1731735197
-  - container: lanzetian-server1-1731736231
-    gpus:
-    - '4'
-    server: server1
-    timestamp: 1731736233
-  - container: lanzetian-server1-1731736695
-    gpus:
-    - '4'
-    server: server1
-    timestamp: 1731736698
-  - container: lanzetian-server1-1731737149
-    gpus:
-    - '5'
-    server: server1
-    timestamp: 1731737154
-  - container: lanzetian-server2-1731737550
-    gpus:
-    - '2'
-    server: server2
-    timestamp: 1731737563
   - container: lanzetian-server2-1731754425
     gpus:
     - '3'
@@ -101,30 +76,19 @@ tasks:
 users:
   admin:
     data_dir: ''
+    email: 1670074219@qq.com
     password: admin_password
     role: admin
     username: admin
-    email: "1670074219@qq.com"
   lanzetian:
     data_dir: /nfs/data/lanzetian
+    email: 3439986898@qq.com
     password: q1w2e3az
     role: user
     username: lanzetian
-    email: "3439986898@qq.com"
   user1:
     data_dir: /nfs/data/user1
+    email: 1670074219@qq.com
     password: password1
     role: user
     username: user1
-    email: "1670074219@qq.com"
-
-# 添加邮件配置
-email_settings:
-  smtp_server: "smtp.qq.com"  # 使用QQ邮箱的SMTP服务器
-  smtp_port: 587
-  sender_email: "1670074219@qq.com"  # 管理员邮箱
-  sender_password: "yrcozxxcygqdbjjd"  # 邮箱授权码
-
-# 添加提醒设置
-notification_settings:
-  warning_threshold: 0.8  # 当运行时间达到限制时间的80%时发送提醒
