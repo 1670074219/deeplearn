@@ -26,6 +26,7 @@ gpu_usage:
     '4': lanzetian
     '5': lanzetian
   server2:
+    '1': user1
     '3': lanzetian
   server3: {}
   server4: {}
@@ -102,6 +103,11 @@ task_records:
     - '2'
     server: server1
     timestamp: 1731758210
+  - container: user1-server2-1731761915
+    gpus:
+    - '1'
+    server: server2
+    timestamp: 1731761927
 user_groups:
   admin_group:
     allowed_servers:

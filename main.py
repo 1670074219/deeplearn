@@ -388,29 +388,65 @@ allow_writeable_chroot=YES
         server_gpu_status = {}
         valid_servers = []
         
+        # 使用SSH管理器获取连接
         for idx, (server_name, server_info) in enumerate(self.config['servers'].items(), 1):
-            gpu_info = self.check_gpu_status(server_name)
-            if gpu_info is not None:
-                # 获取已分配的GPU数量
-                gpu_usage = self.gpu_manager.get_gpu_usage(server_name)
-                allocated_gpus = len(gpu_usage)
-                
-                total_gpus = len(gpu_info)
-                gpu_model = gpu_info[0]['name'] if gpu_info else "未知"
-                avg_util = sum(gpu['utilization'] for gpu in gpu_info) / total_gpus
-                
-                server_gpu_status[str(idx)] = {
-                    'name': server_name,
-                    'host': server_info['host'],
-                    'gpu_info': gpu_info,
-                    'used_gpus': allocated_gpus,  # 使用已分配的GPU数量
-                    'total_gpus': total_gpus,
-                    'gpu_model': gpu_model,
-                    'avg_util': avg_util
-                }
-                valid_servers.append(server_name)
+            ssh = self.ssh_manager.get_connection(server_info)
+            if ssh:
+                gpu_info = self.check_gpu_status_with_ssh(ssh, server_name)  # 使用已有连接
+                if gpu_info is not None:
+                    # 获取已分配的GPU数量
+                    gpu_usage = self.gpu_manager.get_gpu_usage(server_name)
+                    allocated_gpus = len(gpu_usage)
+                    
+                    total_gpus = len(gpu_info)
+                    gpu_model = gpu_info[0]['name'] if gpu_info else "未知"
+                    avg_util = sum(gpu['utilization'] for gpu in gpu_info) / total_gpus
+                    
+                    server_gpu_status[str(idx)] = {
+                        'name': server_name,
+                        'host': server_info['host'],
+                        'gpu_info': gpu_info,
+                        'used_gpus': allocated_gpus,
+                        'total_gpus': total_gpus,
+                        'gpu_model': gpu_model,
+                        'avg_util': avg_util
+                    }
+                    valid_servers.append(server_name)
         
         return server_gpu_status
+
+    def check_gpu_status_with_ssh(self, ssh, server_name):
+        """使用已有的SSH连接获取GPU状态"""
+        try:
+            cmd = (
+                "nvidia-smi --query-gpu=index,gpu_name,memory.total,memory.used,memory.free,utilization.gpu "
+                "--format=csv,noheader,nounits"
+            )
+            stdin, stdout, stderr = ssh.exec_command(cmd)
+            output = stdout.read().decode()
+            error = stderr.read().decode()
+            
+            if error:
+                print(f"获取GPU状态时出错：{error}")
+                return None
+            
+            gpu_info = []
+            for line in output.strip().split('\n'):
+                index, name, total_mem, used_mem, free_mem, util = line.split(', ')
+                gpu_info.append({
+                    'index': int(index),
+                    'name': name,
+                    'total_memory': float(total_mem),
+                    'used_memory': float(used_mem),
+                    'free_memory': float(free_mem),
+                    'utilization': float(util)
+                })
+            
+            return gpu_info
+            
+        except Exception as e:
+            print(f"获取GPU状态失败：{str(e)}")
+            return None
 
     def display_server_status(self, server_status):
         """显示服务器状态信息"""
@@ -475,7 +511,7 @@ allow_writeable_chroot=YES
                 
                 print("\n选项：")
                 print("0. 返回主菜单")
-                print("r. 新服务器信息")
+                print("r. 刷新服务器信息")
                 server_choice = input("请选择服务器序号: ").strip().lower()
                 
                 if server_choice == '0':
@@ -561,7 +597,7 @@ allow_writeable_chroot=YES
                                 print("请输入有效的数字")
                         
                         elif choice == '2':
-                            print("\n获取远程仓库镜像列表...")
+                            print("\n获远程仓库镜像列表...")
                             registry_images = self.get_registry_images(ssh)
                             
                             while True:
@@ -606,62 +642,72 @@ allow_writeable_chroot=YES
     def create_container(self, ssh, server_name, image_name):
         """创建容器的具体流程"""
         try:
-            # 获取GPU信息
-            gpu_info = self.check_gpu_status(server_name)
-            if not gpu_info:
-                print("无法获取GPU信息")
-                return False
-
-            # 显示GPU信息并选择GPU
-            print("\n可用的GPU列表：")
-            print(f"{'序号':<5} {'GPU型号':<30} {'显存使用':<20} {'使用率':<10} {'状态':<10}")
-            print("-" * 75)
-            available_gpus = []
-            for gpu in gpu_info:
-                usage = f"{gpu['used_memory']:.0f}/{gpu['total_memory']:.0f}MB"
-                util_status = "空闲" if gpu['utilization'] < 5 else f"使用率{gpu['utilization']:.0f}%"
-                
-                # 检查GPU是否已被分配
-                if self.gpu_manager.is_gpu_available(server_name, gpu['index']):
-                    alloc_status = "可用"
-                    if gpu['utilization'] < 5:
-                        available_gpus.append(str(gpu['index']))
-                else:
-                    user = self.gpu_manager.get_gpu_usage(server_name).get(str(gpu['index']))
-                    alloc_status = f"已分配给{user}"
-                
-                print(f"{gpu['index']:<5} {gpu['name']:<30} {usage:<20} {util_status:<10} {alloc_status:<10}")
-
-            if not available_gpus:
-                print("\n当前没有可用的GPU")
-                return False
-
-            # 让用户选择GPU
-            print("\n请输入要使用的GPU编号（多个GPU用逗号分隔，如：0,1,2）")
-            print("输入0返回上一步")
-            gpu_choice = input().strip()
-            if gpu_choice == '0':
-                return False
-
-            # 验证GPU选择
-            selected_gpus = [g.strip() for g in gpu_choice.split(',')]
-            
-            # 检查输入的GPU是否有效且可用
-            for gpu in selected_gpus:
-                if gpu not in [str(g['index']) for g in gpu_info]:
-                    print(f"无效的GPU编号：{gpu}")
-                    return False
-                # 检查GPU是否已被分配
-                if not self.gpu_manager.is_gpu_available(server_name, gpu):
-                    print(f"GPU {gpu} 已被其他用户使用，请选择其他GPU")
+            while True:  # 添加循环，允许重新选择GPU
+                # 获取GPU信息
+                gpu_info = self.check_gpu_status(server_name)
+                if not gpu_info:
+                    print("无法获取GPU信息")
                     return False
 
-            # 检查用户GPU使用限制
-            user_group = self.config['users'][self.current_user].get('group', 'default')
-            group_info = self.config['user_groups'][user_group]
-            if len(selected_gpus) > group_info['max_gpus']:
-                print(f"超出GPU使用限制（您所在的用户组 {group_info['name']} 最大可使用 {group_info['max_gpus']} 个GPU）")
-                return False
+                # 显示GPU信息并选择GPU
+                print("\n可用的GPU列表：")
+                print(f"{'序号':<5} {'GPU型号':<30} {'显存使用':<20} {'使用率':<10} {'状态':<10}")
+                print("-" * 75)
+                available_gpus = []
+                for gpu in gpu_info:
+                    usage = f"{gpu['used_memory']:.0f}/{gpu['total_memory']:.0f}MB"
+                    util_status = "空闲" if gpu['utilization'] < 5 else f"使用率{gpu['utilization']:.0f}%"
+                    
+                    # 检查GPU是否已被分配
+                    if self.gpu_manager.is_gpu_available(server_name, gpu['index']):
+                        alloc_status = "可用"
+                        if gpu['utilization'] < 5:
+                            available_gpus.append(str(gpu['index']))
+                    else:
+                        user = self.gpu_manager.get_gpu_usage(server_name).get(str(gpu['index']))
+                        alloc_status = f"已分配给{user}"
+                    
+                    print(f"{gpu['index']:<5} {gpu['name']:<30} {usage:<20} {util_status:<10} {alloc_status:<10}")
+
+                if not available_gpus:
+                    print("\n当前没有可用的GPU")
+                    return False
+
+                # 让用户选择GPU
+                print("\n请输入要使用的GPU编号（多个GPU用逗号分隔，如：0,1,2）")
+                print("输入0返回上一步")
+                gpu_choice = input().strip()
+                if gpu_choice == '0':
+                    return False
+
+                # 验证GPU选择
+                selected_gpus = [g.strip() for g in gpu_choice.split(',')]
+                
+                # 检查输入的GPU是否有效且可用
+                valid_choice = True
+                for gpu in selected_gpus:
+                    if gpu not in [str(g['index']) for g in gpu_info]:
+                        print(f"无效的GPU编号：{gpu}")
+                        valid_choice = False
+                        break
+                    # 检查GPU是否已被分配
+                    if not self.gpu_manager.is_gpu_available(server_name, gpu):
+                        print(f"GPU {gpu} 已被其他用户使用，请选择其他GPU")
+                        valid_choice = False
+                        break
+
+                if not valid_choice:
+                    continue  # 重新显示GPU列表让用户选择
+
+                # 检查用户GPU使用限制
+                user_group = self.config['users'][self.current_user].get('group', 'default')
+                group_info = self.config['user_groups'][user_group]
+                if len(selected_gpus) > group_info['max_gpus']:
+                    print(f"超出GPU使用限制（您所在的用户组 {group_info['name']} 最大可使用 {group_info['max_gpus']} 个GPU）")
+                    continue  # 重新选择GPU
+
+                # GPU选择验证通过，继续后续步骤
+                break
 
             # 获取端口映射
             print("\n请输入主机端口（输入0返回上一步）:")
@@ -691,7 +737,7 @@ allow_writeable_chroot=YES
                     print("端口号必须在1-65535之间")
                     return False
             except ValueError:
-                print("请输入有效的端口号")
+                print("请输有效的端口号")
                 return False
             
             # 检查端口是否已被使用
@@ -749,7 +795,7 @@ allow_writeable_chroot=YES
                 f"tail -f /dev/null"  # 使用 tail -f /dev/null 保持容器运行
             )
             
-            print("\n即将执行的命令：")
+            print("\n即将执行命令：")
             print(docker_cmd)
             print("\n确认创建容器？(y/n)")
             if input().lower() != 'y':
@@ -866,7 +912,7 @@ allow_writeable_chroot=YES
             return []
 
     def show_user_info(self):
-        """显示用户信息和任务"""
+        """显示用户信和任务"""
         print(f"\n=== 用户信息 ===")
         print(f"用户名: {self.current_user}")
         print(f"角色: {self.config['users'][self.current_user]['role']}")
@@ -966,7 +1012,7 @@ allow_writeable_chroot=YES
             print("4. 删除用户组")
             print("5. 返回")
 
-            choice = input("请选择操作: ")
+            choice = input("请选择操��: ")
 
             if choice == '1':
                 groups = self.group_manager.list_groups()
@@ -1041,7 +1087,7 @@ allow_writeable_chroot=YES
             return
 
         while True:
-            print("\n=== 实验室服务器管理系统 ===")
+            print("\n=== 实验室服务管理系统 ===")
             print(f"当前用户: {self.current_user}")
             print("1. 创建深度学习任务")
             print("2. 用户信息")
@@ -1181,7 +1227,7 @@ allow_writeable_chroot=YES
                         continue
                 
                 if not selected_indices:
-                    print("未选择任何有效的任务")
+                    print("未择任何有效的任务")
                     continue
                 
                 # 显示选中的任务
@@ -1221,7 +1267,7 @@ allow_writeable_chroot=YES
                         # 停止该服务器上的所有选中容器
                         for task in server_tasks_list:
                             if self.stop_container(ssh, server_name, task['name']):
-                                print(f"成功停��容器：{task['name']}")
+                                print(f"成功停止容器：{task['name']}")
                             else:
                                 print(f"停止容器失败：{task['name']}")
                         
