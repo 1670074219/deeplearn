@@ -531,7 +531,7 @@ allow_writeable_chroot=YES
                 server_name = server_info['name']
                 server = self.config['servers'][server_name]
                 
-                # 检查用户是否有权限访问选择的服务器
+                # 检查用���是否有权限访问选择的服务器
                 user_group = self.config['users'][self.current_user].get('group', 'default')
                 group_info = self.config['user_groups'][user_group]
                 if server_name not in group_info['allowed_servers']:
@@ -758,7 +758,7 @@ allow_writeable_chroot=YES
             if stdout.read():
                 print(f"发现同名容器存在")
                 print("选项：")
-                print("1. 删除已有容器并继续创建")
+                print("1. 删除已有容器��继续创建")
                 print("2. 取消创建")
                 choice = input("请选择操作 [1/2]: ").strip()
                 
@@ -847,7 +847,7 @@ allow_writeable_chroot=YES
                 stdin, stdout, stderr = ssh.exec_command(error_cmd)
                 error_logs = stdout.read().decode().strip()
                 if error_logs:
-                    print(f"容器日志显示：\n{error_logs}")
+                    print(f"容器日���显示：\n{error_logs}")
                 return False
             
             if not status.startswith('Up'):
@@ -861,7 +861,7 @@ allow_writeable_chroot=YES
             self._record_task(server_name, container_name, selected_gpus)
             
             print(f"\n容器创建成功！")
-            print(f"容器名称���{container_name}")
+            print(f"容器名称：{container_name}")
             print(f"使用GPU：{', '.join(selected_gpus)}")
             print(f"端口映射：{host_port} -> {container_port}")
             print(f"数据目录：{user_data_dir} -> /workspace")
@@ -1000,10 +1000,8 @@ allow_writeable_chroot=YES
                         
                         print(f"\n正在连接到容器 {container_name}...")
                         print("提示：")
-                        print("1. 使用 'exit' 命令退出容器")
-                        print("2. 按 Ctrl+C 强制退出")
-                        print("3. 如果显示异常，尝试调整终端窗口大小")
-                        print("\n正在进入容器...\n")
+                        print("1. 按 Ctrl+C 退出终端")
+                        print("2. 如果显示异常，尝试调整终端窗口大小")
                         
                         # 创建终端管理器并启动会话
                         terminal = TerminalManager(ssh)

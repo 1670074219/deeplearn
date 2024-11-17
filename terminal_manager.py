@@ -24,10 +24,13 @@ class TerminalManager:
             # 发送docker exec命令
             cmd = f'docker exec -it {container_name} /bin/bash\n'
             self.chan.send(cmd)
+            time.sleep(0.5)  # 等待命令执行
             
             # 设置信号处理
             signal.signal(signal.SIGWINCH, self.handle_window_resize)
             signal.signal(signal.SIGINT, self.handle_interrupt)
+            
+            print("\n已连接到容器。按 Ctrl+C 退出终端。\n")
             
             # 创建读写线程
             read_thread = Thread(target=self._read_terminal)
@@ -39,17 +42,20 @@ class TerminalManager:
             read_thread.start()
             write_thread.start()
             
-            # 等待任意线程结束
-            while read_thread.is_alive() and write_thread.is_alive():
-                read_thread.join(0.1)
-                write_thread.join(0.1)
-                if self.stop_event.is_set():
-                    break
+            # 等待停止信号
+            while not self.stop_event.is_set():
+                time.sleep(0.1)
             
         except Exception as e:
             print(f"\n终端会话错误：{str(e)}")
         finally:
             if self.chan:
+                # 发送退出命令
+                try:
+                    self.chan.send("exit\n")
+                    time.sleep(0.5)
+                except:
+                    pass
                 self.chan.close()
             print("\n终端会话已结束")
     
@@ -65,11 +71,6 @@ class TerminalManager:
     def handle_interrupt(self, signum, frame):
         """处理Ctrl+C中断"""
         self.stop_event.set()
-        if self.chan:
-            try:
-                self.chan.send('\x03')  # 发送Ctrl+C
-            except:
-                pass
     
     def _read_terminal(self):
         """从SSH通道读取数据并输出到终端"""
