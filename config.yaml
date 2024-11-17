@@ -134,7 +134,7 @@ user_groups:
     max_containers: 5
     max_gpus: 4
     name: 默认组
-    time_limit: 168
+    time_limit: 18
   student_group:
     allowed_servers:
     - server1
@@ -149,7 +149,7 @@ users:
     data_dir: /nfs/data/admin
     email: 1670074219@qq.com
     group: admin_group
-    password: admin_password
+    password: q1w2e3az
     role: admin
     username: admin
   lanzetian:

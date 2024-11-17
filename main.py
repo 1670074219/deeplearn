@@ -9,6 +9,7 @@ from docker_manager import DockerManager
 from log_manager import LogManager
 from group_manager import GroupManager
 from gpu_manager import GPUManager
+from terminal_manager import TerminalManager
 
 class LabServer:
     def __init__(self):
@@ -860,7 +861,7 @@ allow_writeable_chroot=YES
             self._record_task(server_name, container_name, selected_gpus)
             
             print(f"\n容器创建成功！")
-            print(f"容器名称：{container_name}")
+            print(f"容器名称���{container_name}")
             print(f"使用GPU：{', '.join(selected_gpus)}")
             print(f"端口映射：{host_port} -> {container_port}")
             print(f"数据目录：{user_data_dir} -> /workspace")
@@ -912,7 +913,7 @@ allow_writeable_chroot=YES
             return []
 
     def show_user_info(self):
-        """显示用户信和任务"""
+        """显示用户信息和任务"""
         print(f"\n=== 用户信息 ===")
         print(f"用户名: {self.current_user}")
         print(f"角色: {self.config['users'][self.current_user]['role']}")
@@ -938,23 +939,86 @@ allow_writeable_chroot=YES
         print(f"目录：{self.config['users'][self.current_user].get('data_dir', '未创建')}")
         
         # 显示正在运行的任务
-        print("\n正在运行的任务：")
         tasks = self.get_user_tasks(self.current_user)
         if tasks:
-            print("\n{:<15} {:<20} {:<40} {:<15} {:<20}".format(
-                "服务器", "容器ID", "容器名称", "状态", "运行时间"
+            print("\n正在运行的任务：")
+            print("\n{:<5} {:<15} {:<20} {:<40} {:<15} {:<20}".format(
+                "序号", "服务器", "容器ID", "容器名称", "状态", "运行时间"
             ))
-            print("-" * 110)
-            for task in tasks:
-                print("{:<15} {:<20} {:<40} {:<15} {:<20}".format(
+            print("-" * 115)
+            
+            for idx, task in enumerate(tasks, 1):
+                print("{:<5} {:<15} {:<20} {:<40} {:<15} {:<20}".format(
+                    idx,
                     task['server'],
                     task['container_id'],
                     task['name'],
                     task['status'],
                     task['running_time']
                 ))
+            
+            # 添加进入容器选项
+            print("\n选项：")
+            print("1. 进入容器终端")
+            print("0. 返回")
+            
+            choice = input("\n请选择操作: ").strip()
+            if choice == '1':
+                self.enter_container(tasks)
         else:
             print("暂无运行中的任务")
+
+    def enter_container(self, tasks):
+        """进入容器终端"""
+        while True:
+            print("\n请选择要进入的容器序号（0返回）：")
+            choice = input().strip()
+            
+            if choice == '0':
+                return
+                
+            try:
+                idx = int(choice) - 1
+                if 0 <= idx < len(tasks):
+                    task = tasks[idx]
+                    server_name = task['server']
+                    container_name = task['name']
+                    
+                    # 获取服务器连接
+                    server = self.config['servers'][server_name]
+                    ssh = paramiko.SSHClient()
+                    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+                    
+                    try:
+                        ssh.connect(
+                            hostname=server['host'],
+                            port=server['port'],
+                            username=server['username'],
+                            password=server['password'],
+                            timeout=10
+                        )
+                        
+                        print(f"\n正在连接到容器 {container_name}...")
+                        print("提示：")
+                        print("1. 使用 'exit' 命令退出容器")
+                        print("2. 按 Ctrl+C 强制退出")
+                        print("3. 如果显示异常，尝试调整终端窗口大小")
+                        print("\n正在进入容器...\n")
+                        
+                        # 创建终端管理器并启动会话
+                        terminal = TerminalManager(ssh)
+                        terminal.start_terminal_session(container_name)
+                        
+                    finally:
+                        ssh.close()
+                    return
+                    
+                else:
+                    print("无效的容器序号")
+            except ValueError:
+                print("请输入有效的数字")
+            except Exception as e:
+                print(f"操作失败：{str(e)}")
 
     def change_password(self):
         """修改用户密码"""
@@ -1012,7 +1076,7 @@ allow_writeable_chroot=YES
             print("4. 删除用户组")
             print("5. 返回")
 
-            choice = input("请选择操��: ")
+            choice = input("请选择操作: ")
 
             if choice == '1':
                 groups = self.group_manager.list_groups()
