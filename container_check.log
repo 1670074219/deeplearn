@@ -1,46 +1,3 @@
-时间限制：168小时
-容器运行时间正常，继续运行
-
-检查容器：user1-server2-1731761915
-运行时间：13.0小时
-时间限制：72小时
-容器运行时间正常，继续运行
-
-检查容器：lanzetian-server2-1731754425
-运行时间：15.0小时
-时间限制：168小时
-容器运行时间正常，继续运行
-
-=== 检查完成 ===
-尝试加载配置文件：/data/test/config.yaml
-
-=== 开始检查容器运行时间 (2024-11-17 02:30:01) ===
-
-检查容器：lanzetian-server1-1731760697
-运行时间：14.0小时
-时间限制：18小时
-容器运行时间正常，继续运行
-
-检查容器：lanzetian-server1-1731760150
-运行时间：14.0小时
-时间限制：18小时
-容器运行时间正常，继续运行
-
-检查容器：user1-server1-1731758194
-运行时间：15.0小时
-时间限制：72小时
-容器运行时间正常，继续运行
-
-检查容器：lanzetian-server1-1731758076
-运行时间：15.0小时
-时间限制：18小时
-成功发送提醒邮件到 3439986898@qq.com
-容器运行时间正常，继续运行
-
-检查容器：lanzetian-server1-1731757717
-运行时间：15.0小时
-时间限制：18小时
-成功发送提醒邮件到 3439986898@qq.com
 容器运行时间正常，继续运行
 
 检查容器：user1-server2-1731761915
@@ -127,6 +84,174 @@
 运行时间：15.0小时
 时间限制：18小时
 成功发送提醒邮件到 3439986898@qq.com
+容器运行时间正常，继续运行
+
+检查容器：user1-server2-1731761915
+运行时间：14.0小时
+时间限制：72小时
+容器运行时间正常，继续运行
+
+检查容器：lanzetian-server2-1731754425
+运行时间：16.0小时
+时间限制：18小时
+成功发送提醒邮件到 3439986898@qq.com
+容器运行时间正常，继续运行
+
+=== 检查完成 ===
+尝试加载配置文件：/data/test/config.yaml
+
+=== 开始检查容器运行时间 (2024-11-17 03:00:01) ===
+
+检查容器：lanzetian-server1-1731760697
+运行时间：14.0小时
+时间限制：18小时
+容器运行时间正常，继续运行
+
+检查容器：lanzetian-server1-1731760150
+运行时间：15.0小时
+时间限制：18小时
+成功发送提醒邮件到 3439986898@qq.com
+容器运行时间正常，继续运行
+
+检查容器：user1-server1-1731758194
+运行时间：15.0小时
+时间限制：72小时
+容器运行时间正常，继续运行
+
+检查容器：lanzetian-server1-1731758076
+运行时间：15.0小时
+时间限制：18小时
+成功发送提醒邮件到 3439986898@qq.com
+容器运行时间正常，继续运行
+
+检查容器：lanzetian-server1-1731757717
+运行时间：15.0小时
+时间限制：18小时
+成功发送提醒邮件到 3439986898@qq.com
+容器运行时间正常，继续运行
+
+检查容器：user1-server2-1731761915
+运行时间：14.0小时
+时间限制：72小时
+容器运行时间正常，继续运行
+
+检查容器：lanzetian-server2-1731754425
+运行时间：16.0小时
+时间限制：18小时
+成功发送提醒邮件到 3439986898@qq.com
+容器运行时间正常，继续运行
+
+=== 检查完成 ===
+2024-11-17 03:10:01,526 - INFO - Connected (version 2.0, client OpenSSH_8.9p1)
+2024-11-17 03:10:01,587 - INFO - Authentication (password) successful!
+2024-11-17 03:10:02,057 - INFO - Connected (version 2.0, client OpenSSH_7.4)
+2024-11-17 03:10:02,170 - INFO - Authentication (password) successful!
+2024-11-17 03:10:02,580 - INFO - Connected (version 2.0, client OpenSSH_7.4)
+2024-11-17 03:10:02,692 - INFO - Authentication (password) successful!
+2024-11-17 03:10:03,071 - INFO - Connected (version 2.0, client OpenSSH_7.4)
+2024-11-17 03:10:03,186 - INFO - Authentication (password) successful!
+2024-11-17 03:10:03,576 - INFO - Connected (version 2.0, client OpenSSH_7.4)
+2024-11-17 03:10:03,690 - INFO - Authentication (password) successful!
+2024-11-17 03:10:04,081 - INFO - Connected (version 2.0, client OpenSSH_7.4)
+2024-11-17 03:10:04,197 - INFO - Authentication (password) successful!
+尝试加载配置文件：/data/test/config.yaml
+
+=== 开始检查容器运行时间 (2024-11-17 03:10:01) ===
+
+检查容器：lanzetian-server1-1731760697
+运行时间：15.0小时
+时间限制：18小时
+成功发送提醒邮件到 3439986898@qq.com
+容器运行时间正常，继续运行
+
+检查容器：lanzetian-server1-1731760150
+运行时间：15.0小时
+时间限制：18小时
+成功发送提醒邮件到 3439986898@qq.com
+容器运行时间正常，继续运行
+
+检查容器：user1-server1-1731758194
+运行时间：15.0小时
+时间限制：72小时
+容器运行时间正常，继续运行
+
+检查容器：lanzetian-server1-1731758076
+运行时间：15.0小时
+时间限制：18小时
+成功发送提醒邮件到 3439986898@qq.com
+容器运行时间正常，继续运行
+
+检查容器：lanzetian-server1-1731757717
+运行时间：15.0小时
+时间限制：18小时
+成功发送提醒邮件到 3439986898@qq.com
+容器运行时间正常，继续运行
+
+检查容器：user1-server2-1731761915
+运行时间：14.0小时
+时间限制：72小时
+容器运行时间正常，继续运行
+
+检查容器：lanzetian-server2-1731754425
+运行时间：16.0小时
+时间限制：18小时
+成功发送提醒邮件到 3439986898@qq.com
+容器运行时间正常，继续运行
+
+=== 检查完成 ===
+2024-11-17 03:20:01,998 - INFO - Connected (version 2.0, client OpenSSH_8.9p1)
+2024-11-17 03:20:02,059 - INFO - Authentication (password) successful!
+2024-11-17 03:20:02,531 - INFO - Connected (version 2.0, client OpenSSH_7.4)
+2024-11-17 03:20:02,634 - INFO - Authentication (password) successful!
+2024-11-17 03:20:03,010 - INFO - Connected (version 2.0, client OpenSSH_7.4)
+2024-11-17 03:20:03,128 - INFO - Authentication (password) successful!
+2024-11-17 03:20:03,521 - INFO - Connected (version 2.0, client OpenSSH_7.4)
+2024-11-17 03:20:03,634 - INFO - Authentication (password) successful!
+2024-11-17 03:20:04,012 - INFO - Connected (version 2.0, client OpenSSH_7.4)
+2024-11-17 03:20:04,127 - INFO - Authentication (password) successful!
+2024-11-17 03:20:04,509 - INFO - Connected (version 2.0, client OpenSSH_7.4)
+2024-11-17 03:20:04,617 - INFO - Authentication (password) successful!
+尝试加载配置文件：/data/test/config.yaml
+
+=== 开始检查容器运行时间 (2024-11-17 03:20:01) ===
+
+检查容器：admin-server1-1731813354
+运行时间：0.1小时
+时间限制：336小时
+容器运行时间正常，继续运行
+
+检查容器：lanzetian-server1-1731760697
+运行时间：15.0小时
+时间限制：18小时
+成功发送提醒邮件到 3439986898@qq.com
+容器运行时间正常，继续运行
+
+检查容器：lanzetian-server1-1731760150
+运行时间：15.0小时
+时间限制：18小时
+成功发送提醒邮件到 3439986898@qq.com
+容器运行时间正常，继续运行
+
+检查容器：user1-server1-1731758194
+运行时间：15.0小时
+时间限制：72小时
+容器运行时间正常，继续运行
+
+检查容器：lanzetian-server1-1731758076
+运行时间：15.0小时
+时间限制：18小时
+成功发送提醒邮件到 3439986898@qq.com
+容器运行时间正常，继续运行
+
+检查容器：lanzetian-server1-1731757717
+运行时间：16.0小时
+时间限制：18小时
+成功发送提醒邮件到 3439986898@qq.com
+容器运行时间正常，继续运行
+
+检查容器：admin-server2-1731813581
+运行时间：0.0小时
+时间限制：336小时
 容器运行时间正常，继续运行
 
 检查容器：user1-server2-1731761915

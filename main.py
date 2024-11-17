@@ -10,22 +10,32 @@ from log_manager import LogManager
 from group_manager import GroupManager
 from gpu_manager import GPUManager
 from terminal_manager import TerminalManager
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from status_updater import StatusUpdater
+import os
+import sys
 
 class LabServer:
     def __init__(self):
         self.config_manager = ConfigManager('config.yaml')
+        self.log_manager = LogManager('server.log')
         self.ssh_manager = SSHManager()
         self.docker_manager = DockerManager()
-        self.log_manager = LogManager('server.log')
         self.config = self.config_manager.load_config()
         self.current_user = None
         self.cached_server_status = None
         self.user_manager = UserManager(self.config)
         self.group_manager = GroupManager(self.config)
         self.gpu_manager = GPUManager(self.config)
+        self.last_status_update = 0
+        self.status_update_interval = 300  # 5分钟更新一次
+        self.max_workers = 10  # 最大并行连接数
         
         # 同步GPU使用情况
         self.gpu_manager.sync_gpu_usage()
+        
+        # 不在初始化时启动状态更新器
+        self.status_updater = None
 
     def load_config(self):
         with open('config.yaml', 'r', encoding='utf-8') as f:
@@ -209,8 +219,8 @@ class LabServer:
                         print("拉取超时，可能是网络问题。建议：")
                         print("1. 检查服务器网络连接")
                         print("2. 尝试使用其他像源")
-                        print("3. 如果可能，考虑使用私有仓库")
-                    print(f"拉取镜像失败：{error}")
+                        print("3. 如果可能，虑使用私有仓库")
+                    print(f"拉取像失败：{error}")
                     return False
                 else:
                     print(f"警告：{error}")
@@ -384,26 +394,23 @@ allow_writeable_chroot=YES
         with open('config.yaml', 'w', encoding='utf-8') as f:
             yaml.dump(self.config, f, allow_unicode=True)
 
-    def get_all_servers_status(self):
-        """获取所有服务器的状态信息"""
-        server_gpu_status = {}
-        valid_servers = []
-        
-        # 使用SSH管理器获取连接
-        for idx, (server_name, server_info) in enumerate(self.config['servers'].items(), 1):
+    def get_server_status(self, server_item):
+        """获取单个服务器状态的方法"""
+        idx, (server_name, server_info) = server_item
+        try:
+            print(f"正在连接服务器 {server_name} ({server_info['host']})...")
             ssh = self.ssh_manager.get_connection(server_info)
             if ssh:
-                gpu_info = self.check_gpu_status_with_ssh(ssh, server_name)  # 使用已有连接
+                print(f"连接成功，正在获取GPU信息...")
+                gpu_info = self.check_gpu_status_with_ssh(ssh, server_name)
                 if gpu_info is not None:
-                    # 获取已分配的GPU数量
                     gpu_usage = self.gpu_manager.get_gpu_usage(server_name)
                     allocated_gpus = len(gpu_usage)
-                    
                     total_gpus = len(gpu_info)
                     gpu_model = gpu_info[0]['name'] if gpu_info else "未知"
                     avg_util = sum(gpu['utilization'] for gpu in gpu_info) / total_gpus
                     
-                    server_gpu_status[str(idx)] = {
+                    return str(idx), {
                         'name': server_name,
                         'host': server_info['host'],
                         'gpu_info': gpu_info,
@@ -412,7 +419,40 @@ allow_writeable_chroot=YES
                         'gpu_model': gpu_model,
                         'avg_util': avg_util
                     }
-                    valid_servers.append(server_name)
+            return None
+        except Exception as e:
+            print(f"连接或获取信息失败：{str(e)}")
+            return None
+
+    def get_all_servers_status(self):
+        """获取所有服务器的状态信息（并行处理）"""
+        current_time = time.time()
+        
+        # 如果缓存的状态信息仍然有效且不是强制刷新，直接返回
+        if (self.cached_server_status is not None and 
+            current_time - self.last_status_update < self.status_update_interval and
+            self.last_status_update != 0):  # 添加这个条件
+            return self.cached_server_status
+        
+        server_gpu_status = {}
+        
+        # 使用线程池并行处理连接
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            # 提交所有任务
+            futures = []
+            for idx, (name, info) in enumerate(self.config['servers'].items(), 1):
+                futures.append(executor.submit(self.get_server_status, (idx, (name, info))))
+            
+            # 收集结果
+            for future in as_completed(futures):
+                result = future.result()
+                if result:
+                    idx, status = result
+                    server_gpu_status[idx] = status
+        
+        # 更新缓存和时间戳
+        self.cached_server_status = server_gpu_status
+        self.last_status_update = current_time
         
         return server_gpu_status
 
@@ -456,7 +496,10 @@ allow_writeable_chroot=YES
         ))
         print("-" * 105)  # 减少分隔线长度
         
-        for idx, info in server_status.items():
+        # 按序号排序
+        sorted_status = sorted(server_status.items(), key=lambda x: int(x[0]))
+        
+        for idx, info in sorted_status:
             # 获取已分配的GPU
             gpu_usage = self.gpu_manager.get_gpu_usage(info['name'])
             allocated_gpus = [f"{k}({v})" for k, v in gpu_usage.items()]
@@ -502,10 +545,9 @@ allow_writeable_chroot=YES
                 print("请登录")
                 return
 
-            while True:  # 服务器选择循环
-                if self.cached_server_status is None:
-                    print("正在获取服务器信息...")
-                    self.cached_server_status = self.get_all_servers_status()
+            while True:  # 服���器选择循环
+                # 获取最新的服务器状态
+                self.cached_server_status = self.get_all_servers_status()
                 
                 print("\n可用的服务器：")
                 self.display_server_status(self.cached_server_status)
@@ -519,7 +561,9 @@ allow_writeable_chroot=YES
                     return
                 elif server_choice == 'r':
                     print("正在刷新服务器信息...")
-                    self.cached_server_status = self.get_all_servers_status()
+                    # 强制刷新状态
+                    self.cached_server_status = None
+                    self.last_status_update = 0
                     continue
                 
                 if server_choice not in self.cached_server_status:
@@ -531,7 +575,7 @@ allow_writeable_chroot=YES
                 server_name = server_info['name']
                 server = self.config['servers'][server_name]
                 
-                # 检查用���是否有权限访问选择的服务器
+                # 检查用是否有权限访问选择的服务器
                 user_group = self.config['users'][self.current_user].get('group', 'default')
                 group_info = self.config['user_groups'][user_group]
                 if server_name not in group_info['allowed_servers']:
@@ -598,7 +642,7 @@ allow_writeable_chroot=YES
                                 print("请输入有效的数字")
                         
                         elif choice == '2':
-                            print("\n获远程仓库镜像列表...")
+                            print("\n远程仓库镜像列表...")
                             registry_images = self.get_registry_images(ssh)
                             
                             while True:
@@ -608,7 +652,7 @@ allow_writeable_chroot=YES
                                     status = "[本地已存在]" if is_local else "[远程仓库]"
                                     print(f"{idx}. {image['name']} {status} (大小: {image['size']})")
                                 
-                                print("\n请选择镜像编号（0返回上一步）:")
+                                print("\n请选镜像编号（0返回上一步）:")
                                 choice = input().strip()
                                 if choice == '0':
                                     break
@@ -675,8 +719,8 @@ allow_writeable_chroot=YES
                     return False
 
                 # 让用户选择GPU
-                print("\n请输入要使用的GPU编号（多个GPU用逗号分隔，如：0,1,2）")
-                print("输入0返回上一步")
+                print("\n输入要使用的GPU编号（多个GPU用逗号分隔，如：0,1,2）")
+                print("输入0返上一步")
                 gpu_choice = input().strip()
                 if gpu_choice == '0':
                     return False
@@ -758,7 +802,7 @@ allow_writeable_chroot=YES
             if stdout.read():
                 print(f"发现同名容器存在")
                 print("选项：")
-                print("1. 删除已有容器��继续创建")
+                print("1. 删除已有容器继续创建")
                 print("2. 取消创建")
                 choice = input("请选择操作 [1/2]: ").strip()
                 
@@ -811,7 +855,7 @@ allow_writeable_chroot=YES
                 # 如果出现GPU相关错误，尝试使用替代语法
                 if "cannot set both Count and DeviceIDs on device request" in error:
                     print("尝试使用替代GPU参数格式...")
-                    # 使用替代的GPU参数格式
+                    # 使替代的GPU参数格式
                     device_list = ','.join(selected_gpus)
                     gpu_args = f"--gpus '\"device={device_list}\"'"
                     docker_cmd = (
@@ -847,7 +891,7 @@ allow_writeable_chroot=YES
                 stdin, stdout, stderr = ssh.exec_command(error_cmd)
                 error_logs = stdout.read().decode().strip()
                 if error_logs:
-                    print(f"容器日���显示：\n{error_logs}")
+                    print(f"容器日显示：\n{error_logs}")
                 return False
             
             if not status.startswith('Up'):
@@ -865,6 +909,18 @@ allow_writeable_chroot=YES
             print(f"使用GPU：{', '.join(selected_gpus)}")
             print(f"端口映射：{host_port} -> {container_port}")
             print(f"数据目录：{user_data_dir} -> /workspace")
+            
+            # 立即更新服务器状态缓存
+            self.cached_server_status = None  # 清除缓存
+            self.last_status_update = 0  # 重置更新时间戳
+            # 静默更新服务器状态
+            original_stdout = sys.stdout
+            sys.stdout = open(os.devnull, 'w')
+            try:
+                self.get_all_servers_status()
+            finally:
+                sys.stdout.close()
+                sys.stdout = original_stdout
             
             return True
             
@@ -971,7 +1027,7 @@ allow_writeable_chroot=YES
     def enter_container(self, tasks):
         """进入容器终端"""
         while True:
-            print("\n请选择要进入的容器序号（0返回）：")
+            print("\n请选择要进入的容器序号（0返）：")
             choice = input().strip()
             
             if choice == '0':
@@ -1117,7 +1173,7 @@ allow_writeable_chroot=YES
                     print(f"时间限制：{group_info['time_limit']}小时")
 
                     description = input("\n请输入新的描述（直接回车保持不变）: ")
-                    allowed_servers = input("请输入新的服务器列表（逗号分隔，直接回车保不变）: ")
+                    allowed_servers = input("请输入新的服务器列表逗号分隔，直接回车保不变）: ")
                     max_containers = input("请输入新的最大容器数（直接回车保持不变）: ")
                     max_gpus = input("请输入新的最大GPU数（直接回车保持不变）: ")
                     time_limit = input("请输入新的时限制（直接回车保持不变）: ")
@@ -1143,49 +1199,73 @@ allow_writeable_chroot=YES
                 break
 
     def show_menu(self):
-        # 先进行登录验证
-        if not self.login():
-            print("登录失败，程序退出")
-            return
+        try:
+            # 先进行登录验证
+            if not self.login():
+                print("登录失败，程序退出")
+                return
 
-        while True:
-            print("\n=== 实验室服务管理系统 ===")
-            print(f"当前用户: {self.current_user}")
-            print("1. 创建深度学习任务")
-            print("2. 用户信息")
-            print("3. 修改密码")
-            print("4. 停止任务")
-            print("5. 退出")
+            # 登录成功后启动状态更新器
+            print("\n正在初始化系统，请稍候...", end='', flush=True)
+            self.status_updater = StatusUpdater(self)
             
-            if self.current_user and self.user_manager.is_admin(self.current_user):
-                print("6. 用户管理")
-                print("7. 查看所有任务")
-                print("8. 停止任何用户的任务")
-                print("9. 用户组管理")
+            # 静默初始化服务器状态
+            original_stdout = sys.stdout
+            sys.stdout = open(os.devnull, 'w')
+            try:
+                self.cached_server_status = self.get_all_servers_status()
+            finally:
+                sys.stdout.close()
+                sys.stdout = original_stdout
+            
+            print("\r" + " " * 50 + "\r", end='', flush=True)  # 清除初始化提示
+            
+            # 启动后台更新
+            self.status_updater.start()
 
-            choice = input("请选择操作: ")
+            while True:
+                print("\n=== 实验室服务管理系统 ===")
+                print(f"当前用户: {self.current_user}")
+                print("1. 创建深度学习任务")
+                print("2. 用户信息")
+                print("3. 修改密码")
+                print("4. 停止任务")
+                print("5. 退出")
+                
+                if self.current_user and self.user_manager.is_admin(self.current_user):
+                    print("6. 用户管理")
+                    print("7. 查看所有任务")
+                    print("8. 停止任何用户的任务")
+                    print("9. 用户组管理")
 
-            if choice == '1':
-                self.create_dl_task()
-            elif choice == '2':
-                self.show_user_info()
-            elif choice == '3':
-                self.change_password()
-            elif choice == '4':
-                self.stop_user_task()
-            elif choice == '5':
-                print("感谢使用，再见！")
-                break
-            elif choice == '6' and self.user_manager.is_admin(self.current_user):
-                self.user_manager.manage_users()
-            elif choice == '7' and self.user_manager.is_admin(self.current_user):
-                self.show_all_tasks()
-            elif choice == '8' and self.user_manager.is_admin(self.current_user):
-                self.stop_any_task()
-            elif choice == '9' and self.user_manager.is_admin(self.current_user):
-                self.manage_groups()
-            else:
-                print("无效的选择，请重试")
+                choice = input("\n请选择操作: ")
+                print()  # 添加空行增加可读性
+
+                if choice == '1':
+                    self.create_dl_task()
+                elif choice == '2':
+                    self.show_user_info()
+                elif choice == '3':
+                    self.change_password()
+                elif choice == '4':
+                    self.stop_user_task()
+                elif choice == '5':
+                    print("感谢使用，再见！")
+                    break
+                elif choice == '6' and self.user_manager.is_admin(self.current_user):
+                    self.user_manager.manage_users()
+                elif choice == '7' and self.user_manager.is_admin(self.current_user):
+                    self.show_all_tasks()
+                elif choice == '8' and self.user_manager.is_admin(self.current_user):
+                    self.stop_any_task()
+                elif choice == '9' and self.user_manager.is_admin(self.current_user):
+                    self.manage_groups()
+                else:
+                    print("无效的选择，请重试")
+
+        finally:
+            if self.status_updater:
+                self.status_updater.stop()
 
     def _record_task(self, server_name, container_name, gpu_indices):
         """记录用户任务信息"""
@@ -1232,7 +1312,20 @@ allow_writeable_chroot=YES
                 print(f"删除容器失败：{error}")
                 return False
             
-            print("容器已成功停止并删除")
+            print("容器成功停止并删除")
+            
+            # 立即更新服务器状态缓存
+            self.cached_server_status = None  # 清除缓存
+            self.last_status_update = 0  # 重置更新时间戳
+            # 静默更新服务器状态
+            original_stdout = sys.stdout
+            sys.stdout = open(os.devnull, 'w')
+            try:
+                self.get_all_servers_status()
+            finally:
+                sys.stdout.close()
+                sys.stdout = original_stdout
+            
             return True
         except Exception as e:
             print(f"操作失败：{str(e)}")
@@ -1415,7 +1508,7 @@ allow_writeable_chroot=YES
                     print(f"- {task['name']} (在 {task['server']} 上)")
                 
                 # 确认操作
-                print("\n确认要停止这些容器吗？(y/n)")
+                print("\n确认���停止这些容器吗？(y/n)")
                 if input().lower() != 'y':
                     print("操作已取消")
                     continue
@@ -1442,7 +1535,7 @@ allow_writeable_chroot=YES
                             password=server['password']
                         )
                         
-                        # 停止该服务器上的所有选中容器
+                        # 停止该服务器上��所有选中容器
                         for task in server_tasks_list:
                             if self.stop_container(ssh, server_name, task['name']):
                                 print(f"成功停止容器：{task['name']}")
