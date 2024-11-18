@@ -9,7 +9,7 @@ docker_registries:
 - insecure: true
   name: 实验室仓库
   password: Sitonholy@2021
-  url: 219.216.101.242:8888
+  url: 219.216.99.133:5000
   username: admin
 - name: 公共仓库
   url: docker.io
@@ -20,16 +20,12 @@ email_settings:
   smtp_server: smtp.qq.com
 gpu_usage:
   server1:
-    '0': lanzetian
-    '1': lanzetian
+    '1': admin
     '2': user1
     '3': admin
-    '4': lanzetian
-    '5': lanzetian
   server2:
     '1': user1
     '2': admin
-    '3': lanzetian
   server3: {}
   server4: {}
   server5: {}
@@ -37,12 +33,12 @@ gpu_usage:
 notification_settings:
   warning_threshold: 0.8
 registry_server:
-  host: 219.216.101.242
-  nfs_host: 219.216.101.242
-  nfs_path: /nfs/data
+  host: 219.216.99.133
+  nfs_host: 219.216.99.133
+  nfs_path: /data/ftp_data
   password: siton@2024
   port: 22
-  registry_port: 8888
+  registry_port: 5000
   username: root
 servers:
   server1:
@@ -87,29 +83,12 @@ task_records:
     - '2'
     server: server2
     timestamp: 1731813593
-  lanzetian:
-  - container: lanzetian-server2-1731754425
-    gpus:
-    - '3'
-    server: server2
-    timestamp: 1731754437
-  - container: lanzetian-server1-1731757717
-    gpus:
-    - '0'
-    server: server1
-    timestamp: 1731757719
-  - container: lanzetian-server1-1731760150
+  - container: admin-server1-1731917332
     gpus:
     - '1'
-    - '2'
     server: server1
-    timestamp: 1731760152
-  - container: lanzetian-server1-1731760697
-    gpus:
-    - '4'
-    - '5'
-    server: server1
-    timestamp: 1731760760
+    timestamp: 1731917336
+  lanzetian: []
   user1:
   - container: user1-server1-1731758194
     gpus:

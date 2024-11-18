@@ -2,3 +2,4 @@ paramiko
 pyyaml
 flask
 pyte
+requests

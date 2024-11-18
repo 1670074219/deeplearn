@@ -265,86 +265,48 @@ class ContainerTimeChecker:
             self.clean_task_records()
             
             containers = self.get_container_info()
-            
             if not containers:
                 print("未发现正在运行的容器")
                 return
             
-            warning_threshold = self.config['notification_settings']['warning_threshold']
+            warning_threshold = self.config.get('notification_settings', {}).get('warning_threshold', 0.8)
             
             for container in containers:
-                user = container['user']
-                # 获取用户组的时间限制
-                user_group = self.config['users'][user].get('group', 'default')
-                time_limit = self.config['user_groups'][user_group]['time_limit']
-                
-                running_hours = container['running_hours']
-                
-                print(f"\n检查容器：{container['name']}")
-                print(f"运行时间：{running_hours:.1f}小时")
-                print(f"时间限制：{time_limit}小时")
-                
-                # 检查是否需要发送提醒邮件
-                if running_hours >= (time_limit * warning_threshold) and running_hours < time_limit:
-                    user_email = self.config['users'][user].get('email')
-                    if user_email:
-                        remaining_hours = time_limit - running_hours
-                        subject = "容器运行时间提醒"
-                        body = f"""
-您好，{user}：
-
-您的容器 {container['name']} 即将达到运行时间限制。
-
-当前状态：
-- 已运行时间：{running_hours:.1f}小时
-- 时间限制：{time_limit}小时
-- 剩余时间：{remaining_hours:.1f}小时
-- 运行服务器：{container['server']}
-
-请注意保存您的工作，容器将在达到时间限制后自动停止。
-
-此邮件为系统自动发送，请勿回复。
-"""
-                        self.send_email(user_email, subject, body)
-                
-                if running_hours > time_limit:
-                    print(f"容器 {container['name']} 已超过运行时间限制")
-                    print(f"用户：{user}")
-                    print(f"服务器：{container['server']}")
-                    print(f"已运行：{running_hours:.1f}小时")
-                    print(f"限制时间：{time_limit}小时")
+                try:
+                    user = container['user']
+                    if user not in self.config['users']:
+                        print(f"跳过未知用户的容器：{container['name']}")
+                        continue
                     
-                    # 发送停止通知邮件
-                    user_email = self.config['users'][user].get('email')
-                    if user_email:
-                        subject = "容器已自动停止通知"
-                        body = f"""
-您好，{user}：
-
-您的容器 {container['name']} 已达到运行时间限制，系统已自动停止。
-
-容器信息：
-- 运行时间：{running_hours:.1f}小时
-- 时间限制：{time_limit}小时
-- 运行服务器：{container['server']}
-
-如需继续使用，请重新创建容器。
-
-此邮件为系统自动发送，请勿回复。
-"""
-                        self.send_email(user_email, subject, body)
+                    # 获取用户组的时间限制
+                    user_group = self.config['users'][user].get('group', 'default')
+                    if user_group not in self.config['user_groups']:
+                        print(f"用户 {user} 的用户组 {user_group} 不存在，使用默认组")
+                        user_group = 'default'
                     
-                    if self.stop_container(self.connect_to_server(container['server']), container['server'], container['name']):
-                        print(f"已停止超时容器：{container['name']}")
+                    time_limit = self.config['user_groups'][user_group]['time_limit']
+                    running_hours = container['running_hours']
+                    
+                    print(f"\n检查容器：{container['name']}")
+                    print(f"运行时间：{running_hours:.1f}小时")
+                    print(f"时间限制：{time_limit}小时")
+                    
+                    # 发送提醒邮件
+                    if running_hours >= (time_limit * warning_threshold) and running_hours < time_limit:
+                        self.send_warning_email(user, container, time_limit, running_hours)
+                    
+                    # 停止超时容器
+                    if running_hours > time_limit:
+                        self.stop_overtime_container(container, user)
                     else:
-                        print(f"停止容器失败：{container['name']}")
-                else:
-                    print(f"容器运行时间正常，继续运行")
-            
-            print("\n=== 检查完成 ===")
-            
+                        print("容器运行时间正常，继续运行")
+                    
+                except Exception as e:
+                    print(f"处理容器 {container.get('name', '未知')} 时出错：{str(e)}")
+                    continue
+                
         except Exception as e:
-            print(f"检查过程中出错：{str(e)}")
+            print(f"检查容器运行时间失败：{str(e)}")
         finally:
             # 清理SSH连接
             for ssh in self.ssh_connections.values():

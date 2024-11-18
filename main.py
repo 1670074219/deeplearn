@@ -14,6 +14,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from status_updater import StatusUpdater
 import os
 import sys
+import json
+from registry_manager import RegistryManager
 
 class LabServer:
     def __init__(self):
@@ -36,6 +38,7 @@ class LabServer:
         
         # 不在初始化时启动状态更新器
         self.status_updater = None
+        self.registry_manager = RegistryManager(self.config)
 
     def load_config(self):
         with open('config.yaml', 'r', encoding='utf-8') as f:
@@ -188,7 +191,7 @@ class LabServer:
                     f"--password-stdin"
                 )
                 
-                print(f"正在远程服务器上登录Docker仓库 {registry_info['url']}...")
+                print(f"正在远程务器上登录Docker仓库 {registry_info['url']}...")
                 stdin, stdout, stderr = ssh.exec_command(login_cmd)
                 login_output = stdout.read().decode()
                 login_error = stderr.read().decode()
@@ -239,77 +242,26 @@ class LabServer:
             print(f"拉取镜像时出错：{str(e)}")
             return False
 
-    def get_registry_images(self, ssh):
-        """取仓库服务器上的镜像列表"""
+    def get_registry_images(self, ssh=None):
+        """获取仓库服务器上的镜像列表"""
         try:
-            # 先连接到仓库服务器
-            registry_ssh = paramiko.SSHClient()
-            registry_ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            print("正在获取镜像列表...")
+            images = self.registry_manager.list_images()
             
-            registry_server = self.config['registry_server']
-            print(f"正在连务器 {registry_server['host']}...")
-            print(f"使用用户名: {registry_server['username']}")
-            
-            try:
-                registry_ssh.connect(
-                    hostname=registry_server['host'],
-                    port=registry_server['port'],
-                    username=registry_server['username'],
-                    password=registry_server['password'],
-                    timeout=10
-                )
-                print("仓库服务器连接成功！")
-            except paramiko.AuthenticationException:
-                print(f"认证失败：请检查用户名和密码是否正确")
-                return []
-            except paramiko.SSHException as e:
-                print(f"SSH连接错误：{str(e)}")
-                return []
-            except Exception as e:
-                print(f"连接错误：{str(e)}")
-                return []
-
-            # 获取仓库中的镜像列表（包含大小信息）
-            print("正在获镜像列表...")
-            cmd = "docker images --format '{{.Repository}}:{{.Tag}}\t{{.Size}}'"
-            stdin, stdout, stderr = registry_ssh.exec_command(cmd)
-            output = stdout.read().decode()
-            error = stderr.read().decode()
-            
-            if error:
-                print(f"获取仓库镜像列表失败：{error}")
-                return []
-            
-            images = []
-            for line in output.strip().split('\n'):
-                if line and not line.startswith("REPOSITORY"):
-                    image_info = line.split('\t')
-                    if len(image_info) == 2:
-                        images.append({
-                            'name': image_info[0],
-                            'size': image_info[1],
-                            'source': '远程仓库'
-                        })
-            
-            if not images:
-                print("未找到任何镜像")
+            if images:
+                print(f"\n找到 {len(images)} 个镜像:")
+                for img in images:
+                    print(f"- {img['name']} ({img['size']})")
             else:
-                print(f"找到 {len(images)} 镜像")
+                print("未找到任何镜像")
             
-            registry_ssh.close()
             return images
-            
         except Exception as e:
-            print(f"获取库镜像列表时出错：{str(e)}")
+            print(f"获取仓库镜像列表时出错：{str(e)}")
             return []
-        finally:
-            try:
-                registry_ssh.close()
-            except:
-                pass
 
     def create_user_data_dir(self, ssh, username):
-        """在仓库服务器上创建用户的数据目录和FTP虚拟用户"""
+        """在仓库服务器上创建用户的数据录和FTP虚拟用"""
         try:
             # 连接到仓库服务器
             registry_ssh = paramiko.SSHClient()
@@ -330,7 +282,7 @@ class LabServer:
             check_cmd = f"[ -d {user_dir} ] && echo 'exists' || echo 'not exists'"
             stdin, stdout, stderr = registry_ssh.exec_command(check_cmd)
             if stdout.read().decode().strip() == 'exists':
-                print(f"用户目录已存在：{user_dir}")
+                print(f"用户目录已在：{user_dir}")
             else:
                 # 创建录并
                 cmd = f"sudo mkdir -p {user_dir} && sudo chmod 755 {user_dir}"
@@ -371,7 +323,7 @@ allow_writeable_chroot=YES
             self.config['users'][username]['data_dir'] = user_dir
             self._save_config()
 
-            print(f"\nFTP 虚拟用户配置完成：")
+            print(f"\nFTP 虚拟户配置完成：")
             print(f"服务器：{registry_server['host']}")
             print(f"端口：21")
             print(f"用户名：{username}")
@@ -425,10 +377,10 @@ allow_writeable_chroot=YES
             return None
 
     def get_all_servers_status(self):
-        """获取所有服务器的状态信息（并行处理）"""
+        """获取所有服���器的状态信息（并行处理）"""
         current_time = time.time()
         
-        # 如果缓存的状态信息仍然有效且不是强制刷新，直接返回
+        # 如果缓存的状态信息仍然有且不是强制刷新，直接返回
         if (self.cached_server_status is not None and 
             current_time - self.last_status_update < self.status_update_interval and
             self.last_status_update != 0):  # 添加这个条件
@@ -521,7 +473,7 @@ allow_writeable_chroot=YES
             # 在创建任务前检查用户数据目录
             user_data_dir = self.config['users'][self.current_user].get('data_dir')
             if not user_data_dir:
-                print("正在为用户创建数据目录...")
+                print("正为用户创建据目录...")
                 registry_ssh = None
                 try:
                     registry_ssh = paramiko.SSHClient()
@@ -545,7 +497,7 @@ allow_writeable_chroot=YES
                 print("请登录")
                 return
 
-            while True:  # 服���器选择循环
+            while True:  # 服器选择循环
                 # 获取最新的服务器状态
                 self.cached_server_status = self.get_all_servers_status()
                 
@@ -785,7 +737,7 @@ allow_writeable_chroot=YES
                 print("请输有效的端口号")
                 return False
             
-            # 检查端口是否已被使用
+            # 检查口是否已被使用
             cmd = f"netstat -tln | grep ':{host_port}'"
             stdin, stdout, stderr = ssh.exec_command(cmd)
             if stdout.read():
@@ -826,18 +778,24 @@ allow_writeable_chroot=YES
                 print("用户数据目录未配置")
                 return False
             
+            # 修改这部分,处理镜像名称
+            # 检查是否是远程仓库镜像
+            registry_url = f"{self.config['registry_server']['host']}:{self.config['registry_server']['registry_port']}"
+            if not image_name.startswith(registry_url):
+                # 如果不是完整的仓库地址,则添加
+                image_name = f"{registry_url}/{image_name}"
+
             # 构建docker run命令
             device_list = ','.join(selected_gpus)
             gpu_args = f"--gpus '\"device={device_list}\"'"
             volume_mount = f"-v {user_data_dir}:/workspace"
             port_mapping = f"-p {host_port}:{container_port}"
             
-            # 使用 tail -f /dev/null 保持容器运行
             docker_cmd = (
                 f"docker run -d --name {container_name} "
                 f"{gpu_args} {volume_mount} {port_mapping} "
-                f"{image_name} "
-                f"tail -f /dev/null"  # 使用 tail -f /dev/null 保持容器运行
+                f"{image_name} "  # 这里使用处理后的image_name
+                f"tail -f /dev/null"
             )
             
             print("\n即将执行命令：")
@@ -845,12 +803,28 @@ allow_writeable_chroot=YES
             print("\n确认创建容器？(y/n)")
             if input().lower() != 'y':
                 return False
-            
-            # 执行docker run命令
-            stdin, stdout, stderr = ssh.exec_command(docker_cmd)
-            output = stdout.read().decode()
+
+            # 先尝试登录远程仓库
+            print("\n正在登录远程仓库...")
+            registry_info = self.config['docker_registries'][0]  # 使用第一个仓库配置
+            login_cmd = (
+                f"echo {registry_info['password']} | "
+                f"docker login {registry_info['url']} "
+                f"--username {registry_info['username']} "
+                f"--password-stdin"
+            )
+            stdin, stdout, stderr = ssh.exec_command(login_cmd)
             error = stderr.read().decode()
-            
+            if error and "Error" in error:
+                print(f"登录仓库失败：{error}")
+                return False
+
+            # 执行docker run命令
+            print("\n正在创建容器...")
+            stdin, stdout, stderr = ssh.exec_command(docker_cmd)
+            output = stdout.read().decode().strip()
+            error = stderr.read().decode().strip()
+
             if error:
                 # 如果出现GPU相关错误，尝试使用替代语法
                 if "cannot set both Count and DeviceIDs on device request" in error:
@@ -871,7 +845,7 @@ allow_writeable_chroot=YES
                     error = stderr.read().decode()
                 
                 if error and "Error" in error:
-                    print(f"创建容器失败：{error}")
+                    print(f"创容器失败：{error}")
                     return False
             
             # 验证容器是否成功创建和运行
@@ -999,7 +973,7 @@ allow_writeable_chroot=YES
         if tasks:
             print("\n正在运行的任务：")
             print("\n{:<5} {:<15} {:<20} {:<40} {:<15} {:<20}".format(
-                "序号", "服务器", "容器ID", "容器名称", "状态", "运行时间"
+                "序号", "服务器", "容器ID", "容器称", "状态", "运行时间"
             ))
             print("-" * 115)
             
@@ -1013,14 +987,16 @@ allow_writeable_chroot=YES
                     task['running_time']
                 ))
             
-            # 添加进入容器选项
             print("\n选项：")
             print("1. 进入容器终端")
+            print("2. 打包容器")
             print("0. 返回")
             
             choice = input("\n请选择操作: ").strip()
             if choice == '1':
                 self.enter_container(tasks)
+            elif choice == '2':
+                self.pack_container(tasks)
         else:
             print("暂无运行中的任务")
 
@@ -1175,7 +1151,7 @@ allow_writeable_chroot=YES
                     description = input("\n请输入新的描述（直接回车保持不变）: ")
                     allowed_servers = input("请输入新的服务器列表逗号分隔，直接回车保不变）: ")
                     max_containers = input("请输入新的最大容器数（直接回车保持不变）: ")
-                    max_gpus = input("请输入新的最大GPU数（直接回车保持不变）: ")
+                    max_gpus = input("请输入新最大GPU数（直接回车保持不变）: ")
                     time_limit = input("请输入新的时限制（直接回车保持不变）: ")
 
                     if self.group_manager.modify_group(
@@ -1237,6 +1213,8 @@ allow_writeable_chroot=YES
                     print("7. 查看所有任务")
                     print("8. 停止任何用户的任务")
                     print("9. 用户组管理")
+                    print("10. 服务器管理")
+                    print("11. 仓库管理")
 
                 choice = input("\n请选择操作: ")
                 print()  # 添加空行增加可读性
@@ -1260,6 +1238,10 @@ allow_writeable_chroot=YES
                     self.stop_any_task()
                 elif choice == '9' and self.user_manager.is_admin(self.current_user):
                     self.manage_groups()
+                elif choice == '10' and self.user_manager.is_admin(self.current_user):
+                    self.manage_servers()
+                elif choice == '11' and self.user_manager.is_admin(self.current_user):
+                    self.manage_registry()
                 else:
                     print("无效的选择，请重试")
 
@@ -1342,7 +1324,7 @@ allow_writeable_chroot=YES
             while True:
                 print("\n当前运行的任务：")
                 print("\n{:<5} {:<15} {:<20} {:<40} {:<15} {:<20}".format(
-                    "序号", "服器", "器ID", "容器名称", "状态", "运行时间"
+                    "序号", "服器", "器ID", "器名称", "状态", "运行时间"
                 ))
                 print("-" * 115)
                 
@@ -1433,7 +1415,7 @@ allow_writeable_chroot=YES
                 # 更新任务列表
                 tasks = self.get_user_tasks(self.current_user)
                 if not tasks:
-                    print("\n所有任务已停止")
+                    print("\n所有任务已止")
                     return
                 
                 print("\n是否继续停止其他任务？(y/n)")
@@ -1458,7 +1440,7 @@ allow_writeable_chroot=YES
             while True:
                 print("\n所有运行中的任务：")
                 print("\n{:<5} {:<15} {:<20} {:<40} {:<15} {:<20}".format(
-                    "序号", "服务器", "容器ID", "容器名称", "状态", "运行时间"
+                    "号", "服务器", "容器ID", "容器名称", "状态", "运行时间"
                 ))
                 print("-" * 115)
                 
@@ -1508,7 +1490,7 @@ allow_writeable_chroot=YES
                     print(f"- {task['name']} (在 {task['server']} 上)")
                 
                 # 确认操作
-                print("\n确认���停止这些容器吗？(y/n)")
+                print("\n确认要停止这些容器吗？(y/n)")
                 if input().lower() != 'y':
                     print("操作已取消")
                     continue
@@ -1535,7 +1517,7 @@ allow_writeable_chroot=YES
                             password=server['password']
                         )
                         
-                        # 停止该服务器上��所有选中容器
+                        # 停止该服务器上的所有选中容器
                         for task in server_tasks_list:
                             if self.stop_container(ssh, server_name, task['name']):
                                 print(f"成功停止容器：{task['name']}")
@@ -1558,6 +1540,340 @@ allow_writeable_chroot=YES
                 
         except Exception as e:
             print(f"操作失败：{str(e)}")
+
+    def pack_container(self, tasks):
+        """打包容器"""
+        while True:
+            print("\n请选择要打包的容器序号（0返回）：")
+            choice = input().strip()
+            
+            if choice == '0':
+                return
+            
+            try:
+                idx = int(choice) - 1
+                if 0 <= idx < len(tasks):
+                    task = tasks[idx]
+                    server_name = task['server']
+                    container_name = task['name']
+                    
+                    # 获取服务器连接
+                    server = self.config['servers'][server_name]
+                    ssh = paramiko.SSHClient()
+                    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+                    
+                    try:
+                        ssh.connect(
+                            hostname=server['host'],
+                            port=server['port'],
+                            username=server['username'],
+                            password=server['password'],
+                            timeout=10
+                        )
+                        
+                        print(f"\n正在打包容器 {container_name}...")
+                        
+                        # 让用户输入镜像名称和标签
+                        print("\n请输入镜像名称（默认：当前用户名/容器名）：")
+                        image_name = input().strip()
+                        if not image_name:
+                            image_name = f"{self.current_user}/{container_name}"
+                        
+                        print("请输入标签名（默认：当前日期）：")
+                        tag = input().strip()
+                        if not tag:
+                            tag = time.strftime("%Y%m%d")
+                        
+                        # 提交容器为新镜像
+                        local_image = f"{image_name}:{tag}"
+                        cmd = f"docker commit {container_name} {local_image}"
+                        stdin, stdout, stderr = ssh.exec_command(cmd)
+                        error = stderr.read().decode()
+                        if error:
+                            print(f"创建镜像失败：{error}")
+                            continue
+                        
+                        print(f"\n本地镜像创建成功：{local_image}")
+                        
+                        # 询问是否推送到仓库
+                        print("\n是否要推送到远程仓库？(y/n)")
+                        if input().lower() == 'y':
+                            # 获取仓库信息
+                            registry = self.config['registry_server']
+                            registry_url = f"{registry['host']}:{registry['registry_port']}"
+                            
+                            # 标记镜像
+                            full_image_name = f"{registry_url}/{local_image}"
+                            cmd = f"docker tag {local_image} {full_image_name}"
+                            stdin, stdout, stderr = ssh.exec_command(cmd)
+                            error = stderr.read().decode()
+                            if error:
+                                print(f"标记镜像失败：{error}")
+                                continue
+                            
+                            # 推送镜像到仓库
+                            print(f"正在推送镜像到仓库 {registry_url}...")
+                            cmd = f"docker push {full_image_name}"
+                            stdin, stdout, stderr = ssh.exec_command(cmd)
+                            
+                            # 实时显示推送进度
+                            while True:
+                                line = stdout.readline()
+                                if not line:
+                                    break
+                                print(line.strip())
+                            
+                            error = stderr.read().decode()
+                            if error and "error" in error.lower():
+                                print(f"推送镜像失败：{error}")
+                                continue
+                            
+                            print(f"\n镜像已成功推送到仓库")
+                            print(f"远程镜像：{full_image_name}")
+                            
+                            # 询问是否删除远程标记
+                            print("\n是否删除远程标记？(y/n)")
+                            if input().lower() == 'y':
+                                ssh.exec_command(f"docker rmi {full_image_name}")
+                        
+                        print(f"\n本地镜像：{local_image}")
+                        
+                    finally:
+                        ssh.close()
+                    return
+                
+                else:
+                    print("无效的容器序号")
+            except ValueError:
+                print("请输入有效的数字")
+            except Exception as e:
+                print(f"操作失败：{str(e)}")
+
+    def manage_servers(self):
+        """管理服务器配置"""
+        while True:
+            print("\n=== 服务器管理 ===")
+            print("1. 查看所有服务器")
+            print("2. 添加服务器")
+            print("3. 修改服务器")
+            print("4. 删除服务器")
+            print("5. 测试服务器连接")
+            print("0. 返回")
+
+            choice = input("\n请选择操作: ")
+
+            if choice == '1':
+                print("\n当前服务器列表：")
+                for name, info in self.config['servers'].items():
+                    print(f"\n服务器名：{name}")
+                    print(f"主机地址：{info['host']}")
+                    print(f"SSH端口：{info['port']}")
+                    print(f"用户名：{info['username']}")
+                    
+            elif choice == '2':
+                name = input("\n请输入服务器名称: ")
+                if name in self.config['servers']:
+                    print("服务器名称已存在")
+                    continue
+                    
+                host = input("请输入主机地址: ")
+                port = input("请输入SSH端口(默认22): ") or "22"
+                username = input("请输入用户名: ")
+                password = getpass.getpass("请输入密码: ")
+                
+                # 测试连接
+                try:
+                    ssh = paramiko.SSHClient()
+                    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+                    ssh.connect(
+                        hostname=host,
+                        port=int(port),
+                        username=username,
+                        password=password,
+                        timeout=10
+                    )
+                    ssh.close()
+                    
+                    self.config['servers'][name] = {
+                        'host': host,
+                        'port': int(port),
+                        'username': username,
+                        'password': password
+                    }
+                    self._save_config()
+                    print("服务器添加成功！")
+                    
+                except Exception as e:
+                    print(f"连接测试失败：{str(e)}")
+                    
+            elif choice == '3':
+                name = input("\n请输入要修改的服务器名称: ")
+                if name not in self.config['servers']:
+                    print("服务器不存在")
+                    continue
+                    
+                print("\n当前配置：")
+                info = self.config['servers'][name]
+                print(f"主机地址：{info['host']}")
+                print(f"SSH端口：{info['port']}")
+                print(f"用户名：{info['username']}")
+                
+                host = input("\n请输入新的主机地址（直接回车保持不变）: ") or info['host']
+                port = input("请输入新的SSH端口（直接回车保持不变）: ") or str(info['port'])
+                username = input("请输入新的用户名（直接回车保持不变）: ") or info['username']
+                password = getpass.getpass("请输入新的密码（直接回车保持不变）: ")
+                
+                if not password:
+                    password = info['password']
+                
+                # 测试新配置
+                try:
+                    ssh = paramiko.SSHClient()
+                    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+                    ssh.connect(
+                        hostname=host,
+                        port=int(port),
+                        username=username,
+                        password=password,
+                        timeout=10
+                    )
+                    ssh.close()
+                    
+                    self.config['servers'][name] = {
+                        'host': host,
+                        'port': int(port),
+                        'username': username,
+                        'password': password
+                    }
+                    self._save_config()
+                    print("服务器配置已更新！")
+                    
+                except Exception as e:
+                    print(f"连接测试失败：{str(e)}")
+                    
+            elif choice == '4':
+                name = input("\n请输入要删除的服务器名称: ")
+                if name not in self.config['servers']:
+                    print("服务器不存在")
+                    continue
+                    
+                confirm = input(f"确定要删除服务器 {name} 吗？(y/n): ")
+                if confirm.lower() == 'y':
+                    del self.config['servers'][name]
+                    self._save_config()
+                    print("服务器已删除")
+                    
+            elif choice == '5':
+                name = input("\n请输入要测试的服务器名称: ")
+                if name not in self.config['servers']:
+                    print("服务器不存在")
+                    continue
+                    
+                info = self.config['servers'][name]
+                try:
+                    print(f"正在测试连接 {name} ({info['host']})...")
+                    ssh = paramiko.SSHClient()
+                    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+                    ssh.connect(
+                        hostname=info['host'],
+                        port=info['port'],
+                        username=info['username'],
+                        password=info['password'],
+                        timeout=10
+                    )
+                    
+                    # 测试GPU可用性
+                    print("正在检查GPU...")
+                    gpu_info = self.check_gpu_status_with_ssh(ssh, name)
+                    if gpu_info:
+                        print(f"发现 {len(gpu_info)} 个GPU:")
+                        for gpu in gpu_info:
+                            print(f"- {gpu['name']}")
+                    else:
+                        print("未检测到GPU")
+                    
+                    ssh.close()
+                    print("连接测试成功！")
+                    
+                except Exception as e:
+                    print(f"连接测试失败：{str(e)}")
+                    
+            elif choice == '0':
+                break
+
+    def manage_registry(self):
+        """管理仓库配置"""
+        while True:
+            print("\n=== 仓库管理 ===")
+            print("1. 查看仓库配置")
+            print("2. 修改仓库配置")
+            print("3. 测试仓库连接")
+            print("4. 查看仓库镜像")
+            print("0. 返回")
+
+            choice = input("\n请选择操作: ")
+
+            if choice == '1':
+                print("\n当前仓库配置：")
+                registry = self.config['registry_server']
+                print(f"主机地址：{registry['host']}")
+                print(f"仓库端口：{registry['registry_port']}")
+                print(f"NFS主机：{registry['nfs_host']}")
+                print(f"NFS路径：{registry['nfs_path']}")
+                
+            elif choice == '2':
+                registry = self.config['registry_server']
+                print("\n当前配置：")
+                print(f"主机地址：{registry['host']}")
+                print(f"仓库端口：{registry['registry_port']}")
+                print(f"NFS主机：{registry['nfs_host']}")
+                print(f"NFS路径：{registry['nfs_path']}")
+                
+                host = input("\n请输入新的主机地址（直接回车保持不变）: ") or registry['host']
+                registry_port = input("请输入新的仓库端口（直接回车保持不变）: ") or str(registry['registry_port'])
+                nfs_host = input("请输入新的NFS主机（直接回车保持不变）: ") or registry['nfs_host']
+                nfs_path = input("请输入新的NFS路径（直接回车保持不变）: ") or registry['nfs_path']
+                
+                # 测试连接
+                self.config['registry_server'].update({
+                    'host': host,
+                    'registry_port': int(registry_port),
+                    'nfs_host': nfs_host,
+                    'nfs_path': nfs_path
+                })
+                
+                # 重新初始化registry manager
+                self.registry_manager = RegistryManager(self.config)
+                
+                if self.registry_manager.test_connection():
+                    self._save_config()
+                    print("仓库配置已更新！")
+                else:
+                    print("仓库连接测试失败，配置未保存")
+                    
+            elif choice == '3':
+                if self.registry_manager.test_connection():
+                    print("仓库连接测试成功！")
+                else:
+                    print("仓库连接测试失败")
+                    
+            elif choice == '4':
+                repositories = self.registry_manager.get_catalog()
+                if repositories:
+                    print("\n仓库中的镜像：")
+                    for repo in repositories:
+                        print(f"\n镜像：{repo}")
+                        tags = self.registry_manager.get_tags(repo)
+                        if tags:
+                            print("���签：")
+                            for tag in tags:
+                                size = self.registry_manager.get_image_size(repo, tag)
+                                print(f"  - {tag} ({size})")
+                else:
+                    print("仓库中没有镜像")
+                    
+            elif choice == '0':
+                break
 
 if __name__ == "__main__":
     server = LabServer()
