@@ -3,3 +3,5 @@ pyyaml
 flask
 pyte
 requests
+flask-socketio
+eventlet

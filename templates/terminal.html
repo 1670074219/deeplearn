@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Python Terminal</title>
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #000;
+            overflow: hidden;
+        }
+        #terminal {
+            width: 100%;
+            height: 100%;
+            background: #000000;
+            color: #ffffff;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            line-height: 1.2;
+            padding: 10px;
+            box-sizing: border-box;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            outline: none;
+            position: relative;
+        }
+        .cursor {
+            display: inline-block;
+            width: 8px;
+            height: 15px;
+            background: #fff;
+            margin-left: 1px;
+            animation: blink 1s step-end infinite;
+        }
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0; }
+        }
+        /* 自定义滚动条样式 */
+        #terminal::-webkit-scrollbar {
+            width: 8px;
+        }
+        #terminal::-webkit-scrollbar-track {
+            background: #1a1a1a;
+        }
+        #terminal::-webkit-scrollbar-thumb {
+            background: #333;
+            border-radius: 4px;
+        }
+        #terminal::-webkit-scrollbar-thumb:hover {
+            background: #444;
+        }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script>
+        let socket;
+        let terminal;
+        let currentInput = '';
+        let cursorPosition = 0;
+        let cursorElement;
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            terminal = document.getElementById('terminal');
+            cursorElement = document.createElement('span');
+            cursorElement.className = 'cursor';
+            terminal.appendChild(cursorElement);
+            
+            // 动态获取服务器地址
+            const serverUrl = window.location.protocol + '//' + window.location.hostname + ':' + window.location.port;
+            socket = io(serverUrl);  // 使用完整的服务器地址
+            
+            socket.on('connect', () => {
+                console.log('Connected to server');
+            });
+            
+            socket.on('terminal_output', (data) => {
+                // 移除光标
+                if (cursorElement.parentNode) {
+                    cursorElement.parentNode.removeChild(cursorElement);
+                }
+                
+                terminal.insertAdjacentText('beforeend', data.data);
+                
+                // 重新添加光标
+                terminal.appendChild(cursorElement);
+                terminal.scrollTop = terminal.scrollHeight;
+            });
+
+            // 处理键盘输入
+            document.addEventListener('keydown', (e) => {
+                e.preventDefault();
+
+                if (e.key === 'Enter') {
+                    // 移除光标
+                    if (cursorElement.parentNode) {
+                        cursorElement.parentNode.removeChild(cursorElement);
+                    }
+                    
+                    socket.emit('terminal_input', {input: currentInput + '\n'});
+                    currentInput = '';
+                    cursorPosition = 0;
+                    
+                    // 重新添加光标
+                    terminal.appendChild(cursorElement);
+                } else if (e.key === 'Backspace') {
+                    if (cursorPosition > 0) {
+                        currentInput = currentInput.slice(0, -1);
+                        cursorPosition--;
+                        // 删除终端最后一个字符
+                        terminal.textContent = terminal.textContent.slice(0, -1);
+                        terminal.appendChild(cursorElement);
+                    }
+                } else if (e.key.length === 1) {
+                    // 移除光标
+                    if (cursorElement.parentNode) {
+                        cursorElement.parentNode.removeChild(cursorElement);
+                    }
+                    
+                    // 普通字符输入
+                    currentInput += e.key;
+                    cursorPosition++;
+                    terminal.insertAdjacentText('beforeend', e.key);
+                    
+                    // 重新添加光标
+                    terminal.appendChild(cursorElement);
+                }
+                
+                terminal.scrollTop = terminal.scrollHeight;
+            });
+
+            // 自动聚焦
+            terminal.focus();
+            
+            // 处理窗口大小变化
+            window.addEventListener('resize', adjustTerminalSize);
+            adjustTerminalSize();
+            
+            // 保持光标闪烁
+            terminal.addEventListener('blur', () => {
+                terminal.focus();
+            });
+        });
+
+        function adjustTerminalSize() {
+            // 根据窗口大小调整终端大小
+            const windowHeight = window.innerHeight;
+            const windowWidth = window.innerWidth;
+            terminal.style.height = `${windowHeight}px`;
+            terminal.style.width = `${windowWidth}px`;
+        }
+    </script>
+</head>
+<body>
+    <div id="terminal" tabindex="0"></div>
+</body>
+</html> 
