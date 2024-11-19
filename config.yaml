@@ -26,6 +26,7 @@ gpu_usage:
   server2:
     '1': user1
     '2': admin
+    '3': admin
   server3: {}
   server4: {}
   server5: {}
@@ -47,7 +48,7 @@ servers:
     port: 22
     username: root
   server2:
-    host: 219.216.99.4
+    host: 219.216.101.107
     password: sitonholy@neu
     port: 22
     username: root
@@ -88,6 +89,11 @@ task_records:
     - '1'
     server: server1
     timestamp: 1731917336
+  - container: admin-server2-1731979237
+    gpus:
+    - '3'
+    server: server2
+    timestamp: 1731979243
   lanzetian: []
   user1:
   - container: user1-server1-1731758194

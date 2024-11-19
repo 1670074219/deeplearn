@@ -377,7 +377,7 @@ allow_writeable_chroot=YES
             return None
 
     def get_all_servers_status(self):
-        """获取所有服���器的状态信息（并行处理）"""
+        """获取所有服���的状态信息（并行处理）"""
         current_time = time.time()
         
         # 如果缓存的状态信息仍然有且不是强制刷新，直接返回
@@ -589,7 +589,7 @@ allow_writeable_chroot=YES
                                     if self.create_container(ssh, server_name, image_name):
                                         return  # 创建成功，退出整个函数
                                 else:
-                                    print("无效的选择，请重试")
+                                    print("无效的选，请重试")
                             except ValueError:
                                 print("请输入有效的数字")
                         
@@ -670,7 +670,7 @@ allow_writeable_chroot=YES
                     print("\n当前没有可用的GPU")
                     return False
 
-                # 让用户选择GPU
+                # 让户选择GPU
                 print("\n输入要使用的GPU编号（多个GPU用逗号分隔，如：0,1,2）")
                 print("输入0返上一步")
                 gpu_choice = input().strip()
@@ -1574,10 +1574,10 @@ allow_writeable_chroot=YES
                         print(f"\n正在打包容器 {container_name}...")
                         
                         # 让用户输入镜像名称和标签
-                        print("\n请输入镜像名称（默认：当前用户名/容器名）：")
+                        print("\n请输入镜像名称（默认：当前用户名）：")
                         image_name = input().strip()
                         if not image_name:
-                            image_name = f"{self.current_user}/{container_name}"
+                            image_name = self.current_user  # 用户名作为默认值
                         
                         print("请输入标签名（默认：当前日期）：")
                         tag = input().strip()
@@ -1602,8 +1602,8 @@ allow_writeable_chroot=YES
                             registry = self.config['registry_server']
                             registry_url = f"{registry['host']}:{registry['registry_port']}"
                             
-                            # 标记镜像
-                            full_image_name = f"{registry_url}/{local_image}"
+                            # 标记镜像，添加用户目录
+                            full_image_name = f"{registry_url}/{self.current_user}/{local_image}"
                             cmd = f"docker tag {local_image} {full_image_name}"
                             stdin, stdout, stderr = ssh.exec_command(cmd)
                             error = stderr.read().decode()
@@ -1865,7 +1865,7 @@ allow_writeable_chroot=YES
                         print(f"\n镜像：{repo}")
                         tags = self.registry_manager.get_tags(repo)
                         if tags:
-                            print("���签：")
+                            print("签：")
                             for tag in tags:
                                 size = self.registry_manager.get_image_size(repo, tag)
                                 print(f"  - {tag} ({size})")
