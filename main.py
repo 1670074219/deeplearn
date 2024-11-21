@@ -30,7 +30,7 @@ class LabServer:
         self.group_manager = GroupManager(self.config)
         self.gpu_manager = GPUManager(self.config)
         self.last_status_update = 0
-        self.status_update_interval = 300  # 5分钟更���一次
+        self.status_update_interval = 300  # 5分钟更一次
         self.max_workers = 10  # 最大并行连接数
         
         # 同步GPU使用情况
@@ -155,19 +155,51 @@ class LabServer:
                     if len(image_info) == 2:
                         images.append({
                             'name': image_info[0],
-                            'size': image_info[1]
+                            'size': image_info[1],
+                            'source': '本地镜像'
                         })
             return images
         except Exception as e:
-            print(f"取Docker镜像列表出错：{str(e)}")
+            print(f"获取Docker镜像列表出错：{str(e)}")
             return []
+
+    def get_available_images(self, ssh):
+        """获取所有可用的镜像（包括本地和仓库）"""
+        # 获取本地镜像
+        local_images = self.get_server_docker_images(ssh)
+        
+        # 获取仓库镜像
+        registry_images = self.get_registry_images(ssh)
+        
+        # 合并镜像列表
+        all_images = []
+        
+        # 添加本地镜像
+        for img in local_images:
+            all_images.append({
+                'name': img['name'],
+                'size': img['size'],
+                'source': '本地镜像'
+            })
+        
+        # 添加仓库镜像
+        for img in registry_images:
+            # 检查是否已经存在于本地
+            if not any(local_img['name'] == img['name'] for local_img in local_images):
+                all_images.append({
+                    'name': img['name'],
+                    'size': img['size'],
+                    'source': '仓库镜像'
+                })
+        
+        return all_images
 
     def pull_docker_image(self, ssh, image_name, registry_info):
         """从指定仓库拉取Docker镜像"""
         try:
             print(f"正在从 {registry_info['name']} 拉取镜像 {image_name}...")
             
-            # 根不同的仓库建不同的镜像名称和命令
+            # 构建镜像名称，添加 --insecure-registry 参数
             if registry_info['url'] == 'docker.io':
                 # Docker Hub镜像保持原始名称
                 full_image_name = image_name
@@ -178,7 +210,8 @@ class LabServer:
                     full_image_name = image_name
                 else:
                     full_image_name = f"{registry_info['url']}/{image_name}"
-                pull_cmd = f"docker pull {full_image_name}"
+                # 添加 --insecure-registry 参数
+                pull_cmd = f"docker pull --insecure-registry {registry_info['url']} {full_image_name}"
             
             print(f"构建的镜像名称：{full_image_name}")
             
@@ -186,12 +219,12 @@ class LabServer:
             if 'username' in registry_info and 'password' in registry_info:
                 login_cmd = (
                     f"echo {registry_info['password']} | "
-                    f"docker login {registry_info['url']} "
+                    f"docker login --insecure-registry {registry_info['url']} "  # 添加 --insecure-registry
                     f"--username {registry_info['username']} "
                     f"--password-stdin"
                 )
                 
-                print(f"正在远程��登录Docker仓库 {registry_info['url']}...")
+                print(f"正在远程登录Docker仓库 {registry_info['url']}...")
                 stdin, stdout, stderr = ssh.exec_command(login_cmd)
                 login_output = stdout.read().decode()
                 login_error = stderr.read().decode()
@@ -204,7 +237,7 @@ class LabServer:
 
             # 在远程服务器上拉取镜像
             print(f"开始在远程服务器上拉取镜像：{full_image_name}")
-            print(f"执命令：{pull_cmd}")
+            print(f"执行命令：{pull_cmd}")
             
             stdin, stdout, stderr = ssh.exec_command(pull_cmd)
             
@@ -221,9 +254,9 @@ class LabServer:
                     if "Client.Timeout exceeded" in error:
                         print("拉取超时，可能是网络问题。建议：")
                         print("1. 检查服务器网络连接")
-                        print("2. 尝试使用其他像源")
-                        print("3. 如果可能，虑使用私有仓库")
-                    print(f"拉取像失败：{error}")
+                        print("2. 尝试使用其他镜像源")
+                        print("3. 如果可能，考虑使用私有仓库")
+                    print(f"拉取镜像失败：{error}")
                     return False
                 else:
                     print(f"警告：{error}")
@@ -282,7 +315,7 @@ class LabServer:
             check_cmd = f"[ -d {user_dir} ] && echo 'exists' || echo 'not exists'"
             stdin, stdout, stderr = registry_ssh.exec_command(check_cmd)
             if stdout.read().decode().strip() == 'exists':
-                print(f"用户目录已���：{user_dir}")
+                print(f"用户目录已：{user_dir}")
             else:
                 # 创建录并
                 cmd = f"sudo mkdir -p {user_dir} && sudo chmod 755 {user_dir}"
@@ -409,7 +442,7 @@ allow_writeable_chroot=YES
         return server_gpu_status
 
     def check_gpu_status_with_ssh(self, ssh, server_name):
-        """���用已有的SSH连接获取GPU状态"""
+        """用已有的SSH连接获取GPU状态"""
         try:
             cmd = (
                 "nvidia-smi --query-gpu=index,gpu_name,memory.total,memory.used,memory.free,utilization.gpu "
@@ -552,7 +585,53 @@ allow_writeable_chroot=YES
                         print(f"您已达到容器数量限制（最大{group_info['max_containers']}个）")
                         return False
 
-                    # 进入镜像选择流程
+                    # 获取可用的Docker镜像
+                    print("\n正在获取可用的Docker镜像...")
+                    available_images = self.get_available_images(ssh)
+                    
+                    if not available_images:
+                        print("未找到可用的Docker镜像")
+                        return False
+                    
+                    # 显示镜像列表
+                    print("\n可用的Docker镜像：")
+                    print("\n{:<5} {:<50} {:<15} {:<10}".format("序号", "镜像名称", "大小", "来源"))
+                    print("-" * 80)
+                    for idx, img in enumerate(available_images, 1):
+                        print("{:<5} {:<50} {:<15} {:<10}".format(
+                            idx,
+                            img['name'],
+                            img['size'],
+                            img['source']
+                        ))
+                    
+                    # 让用户选择镜像
+                    while True:
+                        image_choice = input("\n请选择镜像序号（0返回）: ").strip()
+                        if image_choice == '0':
+                            return False
+                        
+                        try:
+                            idx = int(image_choice) - 1
+                            if 0 <= idx < len(available_images):
+                                image_name = available_images[idx]['name']
+                                image_source = available_images[idx]['source']
+                                
+                                # 如果是仓库镜像，需要先拉取
+                                if image_source == '仓库镜像':
+                                    print(f"\n选择的是仓库镜像，需要先拉取...")
+                                    registry_info = self.config['docker_registries'][0]  # 使用第一个仓库配置
+                                    if not self.pull_docker_image(ssh, image_name, registry_info):
+                                        print("镜像拉取失败")
+                                        continue
+                                
+                                break
+                            else:
+                                print("无效的序号，请重试")
+                        except ValueError:
+                            print("请输入有效的数字")
+                    
+                    # 继续处理...
                     return self.create_container(ssh, server_name, image_name)
 
                 except Exception as e:
@@ -713,15 +792,13 @@ allow_writeable_chroot=YES
                     # 获取用户数据目录
                     user_data_dir = self.config['users'][self.current_user].get('data_dir')
                     if not user_data_dir:
-                        print("用户数据目录未配置")
+                        print("用户数目录未配置")
                         return False
                     
                     # 修改这部分,处理镜像名称
                     # 检查是否是远程仓库镜像
                     registry_url = f"{self.config['registry_server']['host']}:{self.config['registry_server']['registry_port']}"
-                    if not image_name.startswith(registry_url):
-                        # 如果不是完整的仓库地址,则添加
-                        image_name = f"{registry_url}/{image_name}"
+                    is_registry_image = image_name.startswith(registry_url)
 
                     # 构建docker run命令
                     device_list = ','.join(selected_gpus)
@@ -729,12 +806,23 @@ allow_writeable_chroot=YES
                     volume_mount = f"-v {user_data_dir}:/workspace"
                     port_mapping = f"-p {host_port}:{container_port}"
                     
-                    docker_cmd = (
-                        f"docker run -d --name {container_name} "
-                        f"{gpu_args} {volume_mount} {port_mapping} "
-                        f"{image_name} "  # 这里使用处理后的image_name
-                        f"tail -f /dev/null"
-                    )
+                    # 如果是本地镜像，直接使用镜像名称
+                    if not is_registry_image:
+                        docker_cmd = (
+                            f"docker run -d --name {container_name} "
+                            f"{gpu_args} {volume_mount} {port_mapping} "
+                            f"{image_name} "
+                            f"tail -f /dev/null"
+                        )
+                    else:
+                        # 如果是仓库镜像，添加仓库地址前缀
+                        full_image_name = f"{registry_url}/{image_name}" if not image_name.startswith(registry_url) else image_name
+                        docker_cmd = (
+                            f"docker run -d --name {container_name} "
+                            f"{gpu_args} {volume_mount} {port_mapping} "
+                            f"{full_image_name} "
+                            f"tail -f /dev/null"
+                        )
                     
                     print("\n即将执行命令：")
                     print(docker_cmd)
@@ -742,20 +830,21 @@ allow_writeable_chroot=YES
                     if input().lower() != 'y':
                         return False
 
-                    # 先尝试登录远程仓库
-                    print("\n正在登录远程仓库...")
-                    registry_info = self.config['docker_registries'][0]  # 使用第一个仓库配置
-                    login_cmd = (
-                        f"echo {registry_info['password']} | "
-                        f"docker login {registry_info['url']} "
-                        f"--username {registry_info['username']} "
-                        f"--password-stdin"
-                    )
-                    stdin, stdout, stderr = ssh.exec_command(login_cmd)
-                    error = stderr.read().decode()
-                    if error and "Error" in error:
-                        print(f"登录仓库失败：{error}")
-                        return False
+                    # 只有使用仓库镜像时才需要登录
+                    if is_registry_image:
+                        print("\n正在登录远程仓库...")
+                        registry_info = self.config['docker_registries'][0]  # 使用第一个仓库配置
+                        login_cmd = (
+                            f"echo {registry_info['password']} | "
+                            f"docker login {registry_info['url']} "
+                            f"--username {registry_info['username']} "
+                            f"--password-stdin"
+                        )
+                        stdin, stdout, stderr = ssh.exec_command(login_cmd)
+                        error = stderr.read().decode()
+                        if error and "Error" in error:
+                            print(f"登录仓库失败：{error}")
+                            return False
 
                     # 执行docker run命令
                     print("\n正在创建容器...")
@@ -1287,7 +1376,7 @@ allow_writeable_chroot=YES
                     ))
                 
                 print("\n请选择要停止的任务序号（多个任务用逗号分隔，如：1,2,3）")
-                print("输入 'all' 停止所任务")
+                print("输入 'all' 停止所任���")
                 print("输入 '0' 返回")
                 choice = input().strip().lower()
                 
@@ -1479,7 +1568,7 @@ allow_writeable_chroot=YES
                 # 更新任务列表
                 tasks = self.get_user_tasks()
                 if not tasks:
-                    print("\n所有任��已停止")
+                    print("\n所有任务已停止")
                     return
                 
                 print("\n是否继续停止其他任务？(y/n)")
@@ -1649,7 +1738,7 @@ allow_writeable_chroot=YES
                         'password': password
                     }
                     self._save_config()
-                    print("服务器添加成功！")
+                    print("服务器添加成��！")
                     
                 except Exception as e:
                     print(f"连接测试失败：{str(e)}")

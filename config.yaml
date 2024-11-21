@@ -28,7 +28,9 @@ gpu_usage:
     '1': user1
     '2': admin
     '3': admin
-  server3: {}
+  server3:
+    '3': admin
+    '4': admin
   server4: {}
   server5: {}
   server6: {}
@@ -95,6 +97,12 @@ task_records:
     - '3'
     server: server2
     timestamp: 1731979243
+  - container: admin-server3-1732172006
+    gpus:
+    - '3'
+    - '4'
+    server: server3
+    timestamp: 1732172016
   lanzetian:
   - container: lanzetian-server1-1732001501
     gpus:
