@@ -100,4 +100,19 @@ class SSHManager:
                 except:
                     pass
             self._connections.clear()
-            self._last_used.clear() 
+            self._last_used.clear()
+    
+    def _remove_connection(self, key):
+        """移除指定的SSH连接"""
+        try:
+            if key in self._connections:
+                connection = self._connections[key]
+                if connection:
+                    try:
+                        connection.close()  # 尝试关闭连接
+                    except:
+                        pass  # 忽略关闭时的错误
+                del self._connections[key]  # 从连接池中删除
+        except Exception as e:
+            print(f"移除SSH连接失败: {str(e)}")
+    

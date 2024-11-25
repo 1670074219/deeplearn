@@ -1,134 +1,77 @@
-docker_images:
-- description: PyTorch 开发环境
-  name: pytorch:latest
-  registry: 实验室仓库
-- description: TensorFlow 开发环境
-  name: tensorflow:latest
-  registry: 公共仓库
-docker_registries:
-- insecure: true
-  name: 实验室仓库
-  password: Sitonholy@2021
-  url: 219.216.99.133:5000
-  username: admin
-- name: 公共仓库
-  url: docker.io
 email_settings:
   sender_email: 1670074219@qq.com
   sender_password: yrcozxxcygqdbjjd
   smtp_port: 587
   smtp_server: smtp.qq.com
+
 gpu_usage:
-  server1:
-    '1': admin
-    '2': user1
-    '3': admin
-    '4': lanzetian
-  server2:
-    '1': user1
-    '2': admin
-    '3': admin
-  server3:
-    '3': admin
-    '4': admin
-  server4: {}
-  server5: {}
-  server6: {}
+  219-216-99-133: {}
+  219-216-101-107: {}
+  219-216-99-5: {}
+  219-216-99-6: {}
+  219-216-99-7: {}
+  219-216-99-10: {}
+
 notification_settings:
   warning_threshold: 0.8
+
 registry_server:
   host: 219.216.99.133
-  nfs_host: 219.216.99.133
-  nfs_path: /data/ftp_data
+  registry_port: 5000
   password: siton@2024
   port: 22
-  registry_port: 5000
   username: root
+
+data_server:
+  host: 219.216.99.133
+  port: 22
+  username: root
+  password: siton@2024
+  data_root: /data/user_data
+
 servers:
-  server1:
+  219-216-99-133:
     host: 219.216.99.133
     password: siton-2009
     port: 22
     username: root
-  server2:
+  219-216-101-107:
     host: 219.216.101.107
     password: sitonholy@neu
     port: 22
     username: root
-  server3:
+  219-216-99-5:
     host: 219.216.99.5
     password: sitonholy@neu
     port: 22
     username: root
-  server4:
+  219-216-99-6:
     host: 219.216.99.6
     password: sitonholy@neu
     port: 22
     username: root
-  server5:
+  219-216-99-7:
     host: 219.216.99.7
     password: sitonholy@neu
     port: 22
     username: root
-  server6:
+  219-216-99-10:
     host: 219.216.99.10
     password: siton@2024
     port: 22
     username: root
+
 task_records:
-  admin:
-  - container: admin-server1-1731813354
-    gpus:
-    - '3'
-    server: server1
-    timestamp: 1731813357
-  - container: admin-server2-1731813581
-    gpus:
-    - '2'
-    server: server2
-    timestamp: 1731813593
-  - container: admin-server1-1731917332
-    gpus:
-    - '1'
-    server: server1
-    timestamp: 1731917336
-  - container: admin-server2-1731979237
-    gpus:
-    - '3'
-    server: server2
-    timestamp: 1731979243
-  - container: admin-server3-1732172006
-    gpus:
-    - '3'
-    - '4'
-    server: server3
-    timestamp: 1732172016
-  lanzetian:
-  - container: lanzetian-server1-1732001501
-    gpus:
-    - '4'
-    server: server1
-    timestamp: 1732001517
-  user1:
-  - container: user1-server1-1731758194
-    gpus:
-    - '2'
-    server: server1
-    timestamp: 1731758210
-  - container: user1-server2-1731761915
-    gpus:
-    - '1'
-    server: server2
-    timestamp: 1731761927
+
 user_groups:
   admin_group:
     allowed_servers:
-    - server1
-    - server2
-    - server3
-    - server4
-    - server5
-    - server6
+    - 219-216-99-133
+    - 219-216-101-107
+    - 219-216-99-5
+    - 219-216-99-6
+    - 219-216-99-7
+    - 219-216-99-10
     description: 管理员用户组
     max_containers: 10
     max_gpus: 8
@@ -136,12 +79,12 @@ user_groups:
     time_limit: 336
   default:
     allowed_servers:
-    - server1
-    - server2
-    - server3
-    - server4
-    - server5
-    - server6
+    - 219-216-99-133
+    - 219-216-101-107
+    - 219-216-99-5
+    - 219-216-99-6
+    - 219-216-99-7
+    - 219-216-99-10
     description: 默认用户组
     max_containers: 5
     max_gpus: 4
@@ -149,13 +92,14 @@ user_groups:
     time_limit: 18
   student_group:
     allowed_servers:
-    - server1
-    - server2
+    - 219-216-99-133
+    - 219-216-101-107
     description: 学生用户组
     max_containers: 3
     max_gpus: 2
     name: 学生组
     time_limit: 72
+  
 users:
   admin:
     data_dir: /nfs/data/admin

@@ -27,14 +27,17 @@ class LabServer:
         self.current_user = None
         self.cached_server_status = None
         self.user_manager = UserManager(self.config)
+        self.user_manager.set_config_manager(self.config_manager)
         self.group_manager = GroupManager(self.config)
+        self.group_manager.set_config_manager(self.config_manager)
         self.gpu_manager = GPUManager(self.config)
+        self.gpu_manager.set_config_manager(self.config_manager)
         self.last_status_update = 0
         self.status_update_interval = 300  # 5分钟更一次
         self.max_workers = 10  # 最大并行连接数
         
         # 同步GPU使用情况
-        self.gpu_manager.sync_gpu_usage()
+        # self.gpu_manager.sync_gpu_usage()
         
         # 不在初始化时启动状态更新器
         self.status_updater = None
@@ -48,20 +51,17 @@ class LabServer:
         while True:  # 添加循环，允许用户重试
             try:
                 username = input("请输入用户名: ")
-                if username == '0':  # 允许用户输入0返回主菜单
-                    return False
                 
                 # 检查用户是否存在
                 if username not in self.config['users']:
                     print(f"错误：用户 {username} 不存在")
                     continue  # 重新开始循环
-                
-                # 尝试最多3次密码输入
-                for attempt in range(3):
-                    password = getpass.getpass("请输入密码: ")
+
+                while True: 
+                    password = getpass.getpass("请输入密码(输入0返回用户名输入): ")
                     if password == '0':  # 允许户输入0回用户名入
                         break
-                    
+                
                     # 检查密码是否正确
                     user_info = self.config['users'][username]
                     if user_info['password'] == password:
@@ -70,16 +70,8 @@ class LabServer:
                         print(f"用户角色: {user_info['role']}")
                         return True
                     else:
-                        remaining = 2 - attempt
-                        if remaining > 0:
-                            print(f"错误：密码不正确，还有{remaining}次机会")
-                        else:
-                            print("错误：密码输入次数过多")
-                
-                # 如果3次密码都错误，询问用户是否重新输入用户名
-                retry = input("\n是否重新输入用户名？(y/n): ").lower().strip()
-                if retry != 'y':
-                    return False
+                        print(f"错误：密码不正确")
+                        break
                 
             except Exception as e:
                 print(f"登录过程中出错：{str(e)}")
@@ -294,85 +286,41 @@ class LabServer:
             return []
 
     def create_user_data_dir(self, ssh, username):
-        """在仓库服务器上创建用户的数据录和FTP虚拟用"""
+        """在数据服务器上创建用户的数据目录"""
         try:
-            # 连接到仓库服务器
-            registry_ssh = paramiko.SSHClient()
-            registry_ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            # 连接到数据服务器
+            data_ssh = paramiko.SSHClient()
+            data_ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             
-            registry_server = self.config['registry_server']
-            registry_ssh.connect(
-                hostname=registry_server['host'],
-                port=registry_server['port'],
-                username=registry_server['username'],
-                password=registry_server['password']
+            data_server = self.config['data_server']
+            data_ssh.connect(
+                hostname=data_server['host'],
+                port=data_server['port'],
+                username=data_server['username'],
+                password=data_server['password']
             )
 
             # 创建用户目录
-            user_dir = f"{registry_server['nfs_path']}/{username}"
+            user_dir = f"{data_server['data_root']}/{username}"
             
-            # 目录是否存在
+            # 检查目录是否存在
             check_cmd = f"[ -d {user_dir} ] && echo 'exists' || echo 'not exists'"
-            stdin, stdout, stderr = registry_ssh.exec_command(check_cmd)
+            stdin, stdout, stderr = data_ssh.exec_command(check_cmd)
             if stdout.read().decode().strip() == 'exists':
-                print(f"用户目录已：{user_dir}")
+                print(f"用户目录已存在：{user_dir}")
             else:
-                # 创建录并
+                # 创建目录并设置权限
                 cmd = f"sudo mkdir -p {user_dir} && sudo chmod 755 {user_dir}"
                 print(f"正在创建用户数据目录：{user_dir}")
-                stdin, stdout, stderr = registry_ssh.exec_command(cmd)
+                stdin, stdout, stderr = data_ssh.exec_command(cmd)
                 error = stderr.read().decode()
                 
                 if error:
-                    print(f"创用户数据目录失：{error}")
+                    print(f"创建用户数据目录失败：{error}")
                     return None
-
-            # 创建虚拟用户配置
-            virtual_user_config = f"""
-local_root={user_dir}
-write_enable=YES
-anon_upload_enable=NO
-anon_mkdir_write_enable=NO
-allow_writeable_chroot=YES
-"""
-            # 创建用户配置文件
-            user_config_path = f"/etc/vsftpd/vusers/{username}"
-            registry_ssh.exec_command("sudo mkdir -p /etc/vsftpd/vusers")
-            registry_ssh.exec_command(f"echo '{virtual_user_config}' | sudo tee {user_config_path}")
-
-            # 确保目录所有权正确
-            registry_ssh.exec_command(f"sudo chown -R virtual_ftp:virtual_ftp {user_dir}")
-            registry_ssh.exec_command(f"sudo chmod 755 {user_dir}")
-
-            # 更新用户数据库文件
-            db_file = "/etc/vsftpd/virtual_users.txt"
-            add_user_cmd = f"echo -e '{username}\\n{self.config['users'][username]['password']}' | sudo tee -a {db_file}"
-            registry_ssh.exec_command(add_user_cmd)
-
-            # 生成用户数据库
-            registry_ssh.exec_command("sudo db_load -T -t hash -f /etc/vsftpd/virtual_users.txt /etc/vsftpd/virtual_users.db")
-
-            # 更新用户配置
-            self.config['users'][username]['data_dir'] = user_dir
-            self._save_config()
-
-            print(f"\nFTP 虚拟户配完成：")
-            print(f"服务器：{registry_server['host']}")
-            print(f"端口：21")
-            print(f"用户名：{username}")
-            print(f"密码：与系统密码相同")
-            print(f"目录：{user_dir}")
-            
-            return user_dir
-
         except Exception as e:
             print(f"创建用户数据目录时出错：{str(e)}")
             return None
-        finally:
-            try:
-                registry_ssh.close()
-            except:
-                pass
 
     def _save_config(self):
         """保存置到文件"""
@@ -506,25 +454,25 @@ allow_writeable_chroot=YES
             # 在创建任务前检查用户数据目录
             user_data_dir = self.config['users'][self.current_user].get('data_dir')
             if not user_data_dir:
-                print("正为用户创建数据目录...")
-                registry_ssh = None
+                print("正在为用户创建数据目录...")
+                data_ssh = None
                 try:
-                    registry_ssh = paramiko.SSHClient()
-                    registry_ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-                    registry_server = self.config['registry_server']
-                    registry_ssh.connect(
-                        hostname=registry_server['host'],
-                        port=registry_server['port'],
-                        username=registry_server['username'],
-                        password=registry_server['password']
+                    data_ssh = paramiko.SSHClient()
+                    data_ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+                    data_server = self.config['data_server']
+                    data_ssh.connect(
+                        hostname=data_server['host'],
+                        port=data_server['port'],
+                        username=data_server['username'],
+                        password=data_server['password']
                     )
-                    user_data_dir = self.create_user_data_dir(registry_ssh, self.current_user)
+                    user_data_dir = self.create_user_data_dir(data_ssh, self.current_user)
                     if not user_data_dir:
                         print("无法创建用户数据目录，请联系管理员")
                         return False
                 finally:
-                    if registry_ssh:
-                        registry_ssh.close()
+                    if data_ssh:
+                        data_ssh.close()
 
             if not self.current_user:
                 print("请先登录")
@@ -532,8 +480,14 @@ allow_writeable_chroot=YES
 
             while True:  # 服务器选择循环
                 try:
-                    # 获取最新的服务器状态
-                    self.cached_server_status = self.get_all_servers_status()
+                    # 静默初始化服务器状态,获取最新的服务器状态                        
+                    original_stdout = sys.stdout
+                    sys.stdout = open(os.devnull, 'w')
+                    try:
+                        self.cached_server_status = self.get_all_servers_status()
+                    finally:
+                        sys.stdout.close()
+                        sys.stdout = original_stdout
                     
                     print("\n可用的服务器：")
                     self.display_server_status(self.cached_server_status)
@@ -559,6 +513,19 @@ allow_writeable_chroot=YES
                     server_info = self.cached_server_status[server_choice]
                     server_name = server_info['name']
                     server = self.config['servers'][server_name]
+
+                    # 检查用户是否有权限访问选择的服务器
+                    user_group = self.config['users'][self.current_user].get('group', 'default')
+                    group_info = self.config['user_groups'][user_group]
+                    if server_name not in group_info['allowed_servers']:
+                        print(f"您所在的用户组（{group_info['name']}）没有权限访问该服务器")
+                        return False
+
+                    # 检查用户的容器数量限制
+                    current_containers = len(self.get_user_tasks(self.current_user))
+                    if current_containers >= group_info['max_containers']:
+                        print(f"您已达到容器数量限制（最大{group_info['max_containers']}个）")
+                        return False
                     
                     # 创建SSH连接
                     ssh = paramiko.SSHClient()
@@ -571,19 +538,6 @@ allow_writeable_chroot=YES
                         timeout=10
                     )
                     ssh_connections[server_name] = ssh
-                    
-                    # 检查用户是否有权限访问选择的服务器
-                    user_group = self.config['users'][self.current_user].get('group', 'default')
-                    group_info = self.config['user_groups'][user_group]
-                    if server_name not in group_info['allowed_servers']:
-                        print(f"您所在的用户组（{group_info['name']}）没有权限访问该服务器")
-                        return False
-                    
-                    # 检查用户的容器数量限制
-                    current_containers = len(self.get_user_tasks(self.current_user))
-                    if current_containers >= group_info['max_containers']:
-                        print(f"您已达到容器数量限制（最大{group_info['max_containers']}个）")
-                        return False
 
                     # 获取可用的Docker镜像
                     print("\n正在获取可用的Docker镜像...")
@@ -607,9 +561,9 @@ allow_writeable_chroot=YES
                     
                     # 让用户选择镜像
                     while True:
-                        image_choice = input("\n请选择镜像序号（0返回）: ").strip()
-                        if image_choice == '0':
-                            return False
+                        image_choice = input("\n请选择镜像序号（b返回）: ").strip()
+                        if image_choice == 'b':
+                            break  # 跳出镜像选择循环，返回到服务器选择循环
                         
                         try:
                             idx = int(image_choice) - 1
@@ -625,14 +579,16 @@ allow_writeable_chroot=YES
                                         print("镜像拉取失败")
                                         continue
                                 
-                                break
+                                # 创建容器
+                                return self.create_container(ssh, server_name, image_name)
                             else:
                                 print("无效的序号，请重试")
                         except ValueError:
                             print("请输入有效的数字")
                     
-                    # 继续处理...
-                    return self.create_container(ssh, server_name, image_name)
+                    if image_choice != 'b':
+                        # 继续处理...
+                        return self.create_container(ssh, server_name, image_name)
 
                 except Exception as e:
                     print(f"操作失败：{str(e)}")
@@ -686,9 +642,9 @@ allow_writeable_chroot=YES
 
                 # 让户选择GPU
                 print("\n输入要使用的GPU编号（多个GPU用逗号分隔，如：0,1,2）")
-                print("输入0返上一步")
+                print("输入b返上一步")
                 gpu_choice = input().strip()
-                if gpu_choice == '0':
+                if gpu_choice == 'b':
                     return False
 
                 # 验证GPU选择
@@ -772,7 +728,7 @@ allow_writeable_chroot=YES
                         print(f"发现同名容器存在")
                         print("选项：")
                         print("1. 删除已有容器继续创建")
-                        print("2. 取消创建")
+                        print("2. 取消��建")
                         choice = input("请选择操作 [1/2]: ").strip()
                         
                         if choice == '2':
@@ -786,7 +742,7 @@ allow_writeable_chroot=YES
                             ssh.exec_command(f"docker rm {container_name}")
                             print("同名容器已清理")
                         else:
-                            print("无效的选择，取消创建")
+                            print("无效的择，取消创建")
                             return False
                     
                     # 获取用户数据目录
@@ -872,7 +828,7 @@ allow_writeable_chroot=YES
                             error = stderr.read().decode()
                         
                         if error and "Error" in error:
-                            print(f"创容器失败：{error}")
+                            print(f"创器失败：{error}")
                             return False
                     
                     # 验证容器是否成功创建和运行
@@ -1237,7 +1193,7 @@ allow_writeable_chroot=YES
             self.status_updater.start()
 
             while True:
-                print("\n=== 实验室服务管理系统 ===")
+                print("\n=== 实验室服务器管理系统 ===")
                 print(f"当前用户: {self.current_user}")
                 print("1. 创建深度学习任务")
                 print("2. 用户信息")
@@ -1376,7 +1332,7 @@ allow_writeable_chroot=YES
                     ))
                 
                 print("\n请选择要停止的任务序号（多个任务用逗号分隔，如：1,2,3）")
-                print("输入 'all' 停止所任���")
+                print("输入 'all' 停止所任")
                 print("输入 '0' 返回")
                 choice = input().strip().lower()
                 
@@ -1738,7 +1694,7 @@ allow_writeable_chroot=YES
                         'password': password
                     }
                     self._save_config()
-                    print("服务器添加成��！")
+                    print("服务器添加成！")
                     
                 except Exception as e:
                     print(f"连接测试失败：{str(e)}")
